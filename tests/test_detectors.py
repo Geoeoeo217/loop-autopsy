@@ -1,4 +1,3 @@
-"""Tests for detectors.py (owner: Teammate 2)."""
 from conftest import make_state, step
 
 from loop_autopsy.config import Settings
