@@ -1,6 +1,5 @@
 """Turn a Finding and a loop's history into a readable report.
 
-See SPEC.md section 9. Owner: Teammate 5.
 ``record`` is called on every check, so it must stay fast: it stores values,
 not text, and converts containers to a small size marker.
 """
