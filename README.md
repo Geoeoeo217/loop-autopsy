@@ -72,7 +72,7 @@ How it works, in short:
 4. Anything it cannot prove falls back to an honest time limit. No AI model, no
    internet, and the same result every time.
 
-The full rules and numbers are in [SPEC.md](SPEC.md).
+Every rule and its numbers are listed below, and every number can be changed (see Settings).
 
 ## What it detects
 
@@ -134,7 +134,7 @@ c.InteractiveShellApp.extensions = ["loop_autopsy"]
 | `%autopsy on` / `off` | start / stop watching loops |
 | `%autopsy last` | show the last report again |
 | `%autopsy heatmap on` / `off` / `auto` | cell health bar (`auto` = only when a cell is slow or memory-heavy) |
-| `%autopsy config time_limit=120` | change a setting (all settings are listed in SPEC.md §6) |
+| `%autopsy config time_limit=120` | change a setting (see Settings below) |
 | `%%autopsy off` | first line of a cell: run that cell without watching |
 | `%autopsy help` | help |
 
@@ -143,6 +143,28 @@ Loops inside generators (`yield`) are left alone, because infinite generators ar
 normal.
 
 Try [examples/demo.ipynb](examples/demo.ipynb) for every feature in one notebook.
+
+## Settings
+
+Change any of these with `%autopsy config key=value` (for example `%autopsy config time_limit=120`).
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `time_limit` | 60 | seconds before a loop that cannot be proven stuck is stopped (0 = never) |
+| `direction_after` | 500 | checks in a row moving away from the stop value before "wrong direction" |
+| `jump_after` | 100 | checks in a row after jumping over a `!=` stop value |
+| `growth_after` | 2000 | rounds before a growing list in a `for` loop is reported |
+| `memory_stop` | 0.85 | stop a loop when memory reaches this fraction of the limit |
+| `memory_warn` | 0.75 | health bar warning at this fraction of the limit |
+| `max_output_lines` | 1000 | printed lines per cell before output is muted (0 = off) |
+| `replay_rows` | 6 | rows in the replay table |
+| `max_watched` | 25 | variables watched per loop |
+| `heatmap` | `auto` | `on`, `off` or `auto` |
+| `time_yellow` / `time_red` | 1.0 / 10.0 | seconds for a yellow / red health bar |
+| `mem_yellow` / `mem_red` | 0.50 / 0.80 | memory fraction for a yellow / red health bar |
+
+The memory limit is read from JupyterHub's `MEM_LIMIT` setting, then the container's
+memory limit, then the computer's total RAM.
 
 ## Limitations (honest list)
 
@@ -177,7 +199,6 @@ Built by a team of five for CS1302 (Introduction to Computer Programming).
 | KWAN Kendrick Matthew | replay table and reports (`report.py`) |
 | HANDAYA Clement Steward | cell health bar and output guard (`heatmap.py`) |
 
-See [TEAM.md](TEAM.md) for the full plan.
 
 ## License
 
