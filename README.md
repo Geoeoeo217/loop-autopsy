@@ -1,0 +1,184 @@
+# loop-autopsy
+
+**Stops runaway loops in Jupyter and shows the evidence for why they never ended.**
+
+```python
+%load_ext loop_autopsy
+
+count = 1
+while count <= 5:
+    print(count)
+```
+
+Instead of freezing the notebook, the loop is stopped after 3 rounds and you get:
+
+![A loop-autopsy report for a stuck loop](https://raw.githubusercontent.com/Geoeoeo217/loop-autopsy/main/docs/report.png)
+
+```
+Loop autopsy — stuck loop (line 2)
+    while count <= 5:
+
+Nothing changed between rounds: `count = 1` stayed exactly the same, so the
+condition `count <= 5` is True every time and the loop can never end.
+
+Last rounds checked:
+round  count (same)
+-----  ------------
+1      1
+2      1
+3      1
+
+Hint: Add a line inside the loop that changes `count` so that `count <= 5`
+eventually becomes False (for example `count += 1`).
+```
+
+---
+
+## Motivation
+
+Every beginner writes an infinite loop. In a notebook on a shared JupyterHub this
+is worse than it sounds:
+
+- the cell hangs with no explanation, and the only remedy is the stop button ■;
+- a `print` inside the loop floods the browser with output until the tab freezes;
+- the loop keeps using CPU and memory on a server shared by the whole class.
+
+Pressing ■ stops the loop but teaches nothing. The student still does not know
+*which* variable failed to change or *why* the condition never became False.
+
+## Innovation
+
+loop-autopsy watches loops **while they run** and stops them only when it can
+**prove** they will never end. Then it shows the evidence.
+
+| | Stops a stuck loop? | Explains *why*? | When? |
+|---|---|---|---|
+| Stop button ■ | yes (you press it) | no | whenever you notice |
+| Timeout decorators (e.g. `wrapt_timeout_decorator`) | yes, after a fixed time | no | after the time limit |
+| Error explainers (e.g. `friendly-traceback`) | no | explains *errors*, but an infinite loop raises none | after a crash |
+| Memory monitors (e.g. `jupyter-resource-usage`) | no | no | shows totals only |
+| **loop-autopsy** | **yes, automatically** | **yes, with a replay table** | **during the loop, often after 3 rounds** |
+
+How it works, in short:
+
+1. An IPython **AST transformer** (it edits the code's syntax tree before it runs)
+   adds a tiny check to every `while` and `for` loop you type in a cell.
+2. Each check takes a **fingerprint** of the loop's variables. If a deterministic
+   loop comes back to an *exactly identical* state, it must repeat forever: that
+   is a proof, not a guess.
+3. Further rules catch a counter moving *away* from its target, a `!=` condition
+   that jumps over its stop value (`0.1 + 0.1 + ...` never equals `1.0`), a list
+   that grows while you loop over it, and memory running out.
+4. Anything it cannot prove falls back to an honest time limit. No AI model, no
+   internet, and the same result every time.
+
+The full rules and numbers are in [SPEC.md](SPEC.md).
+
+## What it detects
+
+| Pattern | Example | Stopped after |
+|---|---|---|
+| **Stuck**: nothing changes | `while count <= 5: print(count)` | 3 rounds |
+| **Cycle**: values go round in a circle | `while a < 5: a = (a + 1) % 3` | about 2 cycles |
+| **Wrong direction** | `while i < 10: i -= 1` | 500 checks |
+| **Jumped over** the stop value | `while x != 1.0: x += 0.1` | about 100 checks |
+| **Growing list** in a `for` loop | `for n in nums: nums.append(n)` | 2,000 rounds |
+| **Memory** about to run out | a loop filling a huge list | at 85% of the limit |
+| **Too long** (fallback) | anything else | 60 s |
+
+Plus two extras:
+
+- **Press ■ yourself** and you still get the replay table, showing which
+  variables never changed.
+- **Cell health bar**: time, memory and loops for a cell, coloured green / yellow /
+  red. It warns when memory passes 75% of your limit and names the biggest
+  variables (pandas and NumPy aware). It also mutes output after 1,000 printed
+  lines so the browser stays responsive.
+
+## Example use cases
+
+- **Students** in an intro course: load it once at the top of every notebook and
+  never lose a session to a frozen loop again.
+- **Instructors** on JupyterHub: load it for everyone (see below) to protect the
+  shared server and turn every infinite loop into a mini-lesson.
+- **Teaching assistants**: the replay table shows at a glance what went wrong in
+  a student's loop.
+- **Data notebooks**: the health bar shows which cell is slow or memory-hungry.
+
+## Setup
+
+```bash
+pip install loop-autopsy
+```
+
+The only requirement is IPython (already present in Jupyter). Python 3.9+.
+
+In a notebook:
+
+```python
+%load_ext loop_autopsy
+```
+
+**For instructors**: to turn it on for every notebook, add this to the IPython
+profile (`~/.ipython/profile_default/ipython_config.py`):
+
+```python
+c.InteractiveShellApp.extensions = ["loop_autopsy"]
+```
+
+## Usage
+
+| Command | Effect |
+|---|---|
+| `%autopsy` | status and settings |
+| `%autopsy on` / `off` | start / stop watching loops |
+| `%autopsy last` | show the last report again |
+| `%autopsy heatmap on` / `off` / `auto` | cell health bar (`auto` = only when a cell is slow or memory-heavy) |
+| `%autopsy config time_limit=120` | change a setting (all settings are listed in SPEC.md §6) |
+| `%%autopsy off` | first line of a cell: run that cell without watching |
+| `%autopsy help` | help |
+
+Cells that use `%timeit` / `%%timeit` are never watched, so timings stay accurate.
+Loops inside generators (`yield`) are left alone, because infinite generators are
+normal.
+
+Try [examples/demo.ipynb](examples/demo.ipynb) for every feature in one notebook.
+
+## Limitations (honest list)
+
+- No tool can detect *every* infinite loop (the halting problem). loop-autopsy
+  only reports a stuck, cycling, wrong-direction or jumped-over loop when it can
+  prove it; everything else gets the time limit.
+- Loops that call your own functions or modules such as `random` cannot be proven
+  stuck (those calls might change hidden state), so they rely on the time limit.
+- Only code typed in notebook cells is watched, not code inside imported modules.
+- Watching adds a small cost to each loop round (roughly 0.1–0.2 µs per round on
+  simple loops). Use `%%autopsy off` for heavy number crunching.
+- A bare `except:` inside a loop can catch the stop signal, just as it catches ■.
+
+## Development
+
+```bash
+git clone https://github.com/Geoeoeo217/loop-autopsy
+cd loop-autopsy
+pip install -e ".[test]"
+pytest
+```
+
+## Team
+
+Built by a team of five for CS1302 (Introduction to Computer Programming).
+
+| Member | Part |
+|---|---|
+| NATHANAEL George Steindhart | project lead: loop rewriting (`transformer.py`), run-time glue (`monitor.py`), magics, packaging |
+| SETIAWAN Matthew Henson | detection rules: stuck, cycle, wrong direction, jumped over, time limit (`detectors.py`) |
+| LATHIF Muhammad Akmal | memory and growing-list rules (`growth.py`) |
+| KWAN Kendrick Matthew | replay table and reports (`report.py`) |
+| HANDAYA Clement Steward | cell health bar and output guard (`heatmap.py`) |
+
+See [TEAM.md](TEAM.md) for the full plan.
+
+## License
+
+MIT
