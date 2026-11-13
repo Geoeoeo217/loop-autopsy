@@ -1,4 +1,4 @@
-"""Tests for heatmap.py (owner: Teammate 4)."""
+"""Tests for heatmap.py"""
 import io
 
 from loop_autopsy.config import Settings
