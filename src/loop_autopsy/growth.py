@@ -1,6 +1,5 @@
 """Memory helpers and rules R5 (growing iterable) and R6 (memory).
 
-See SPEC.md sections 5 and 10. Owner: Teammate 3.
 No third-party dependency is required; psutil is used only if installed.
 """
 
