@@ -1,4 +1,4 @@
-"""Cell health bar and output guard. See SPEC.md section 10. Owner: Teammate 4.
+"""Cell health bar and output guard.
 
 After each cell a thin coloured bar shows time, memory and loops watched.
 In ``auto`` mode it only appears when something is worth seeing.
