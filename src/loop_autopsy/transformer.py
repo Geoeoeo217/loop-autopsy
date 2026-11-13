@@ -1,6 +1,5 @@
 """Rewrite the loops in a notebook cell so they can be watched.
 
-See SPEC.md section 4.1. Owner: George.
 
 Every ``while``/``for`` loop gets two inserted calls::
 
