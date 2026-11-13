@@ -1,4 +1,3 @@
-"""Tests for growth.py (owner: Teammate 3)."""
 from conftest import make_state
 
 from loop_autopsy import growth
