@@ -1,4 +1,3 @@
-"""Tests for report.py (owner: Teammate 5)."""
 from conftest import make_state
 
 from loop_autopsy.config import Finding
