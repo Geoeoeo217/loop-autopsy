@@ -1,8 +1,3 @@
-"""Shared settings and data types used by every loop-autopsy module.
-
-See SPEC.md sections 6 and 7. Owner: George.
-"""
-
 from __future__ import annotations
 
 from collections import deque
