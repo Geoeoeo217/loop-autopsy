@@ -1,5 +1,4 @@
-"""Detection rules R1-R4 and R7 (see SPEC.md section 5). Owner: Teammate 2.
-
+"""
 Each ``check_*`` function receives the loop's static ``LoopInfo``, its run-time
 ``LoopState`` and ``values`` (the watched variables right now) and returns a
 ``Finding`` when it can prove the loop will not end, otherwise ``None``.

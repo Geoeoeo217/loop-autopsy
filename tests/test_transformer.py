@@ -1,4 +1,3 @@
-"""Tests for transformer.py (owner: George)."""
 import ast
 
 from loop_autopsy.transformer import (LoopTransformer, classify_calls, compare_spec, method_receivers,
