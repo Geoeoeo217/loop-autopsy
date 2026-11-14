@@ -15,8 +15,23 @@ from .config import Finding, LoopState
 
 _IMMUTABLE = (type(None), bool, int, float, complex, str, bytes, Fraction, Decimal, range)
 ACCENT = {"stuck": "#d9480f", "cycle": "#d9480f", "wrong_direction": "#d9480f", "jumped_over": "#d9480f",
-          "growing_iterable": "#c2255c", "memory": "#c2255c", "time_limit": "#e67700", "interrupt": "#1971c2"}
+          "growing_iterable": "#c2255c", "memory": "#c2255c", "time_limit": "#e67700", "interrupt": "#1971c2",
+          "recursion": "#7048e8", "recursion_stuck": "#7048e8", "recursion_cycle": "#7048e8",
+          "recursion_past_base": "#7048e8", "recursion_wrong_way": "#7048e8", "recursion_too_deep": "#7048e8"}
 _MISSING = object()
+
+
+def _is_recursion(state: LoopState) -> bool:
+    return state.info.kind == "recursion"
+
+
+def _step_word(state: LoopState) -> str:
+    """Column heading for the replay table: rounds for loops, calls for recursion."""
+    return "call" if _is_recursion(state) else "round"
+
+
+def _table_title(state: LoopState) -> str:
+    return "First and last calls:" if _is_recursion(state) else "Last rounds checked:"
 
 
 class Text(str):
@@ -99,13 +114,15 @@ def replay_table(state: LoopState) -> Tuple[List[str], List[List[str]], List[str
 
 
 def _footer(state: LoopState, elapsed: Optional[float]) -> str:
+    if _is_recursion(state):
+        return f"Stopped by Python after {state.rounds:,} nested calls  ·  %autopsy last = show again"
     t = f" in {elapsed:.2f} s" if elapsed is not None else ""
     return f"Stopped after {state.rounds:,} rounds{t}  ·  %autopsy last = show again  ·  %%autopsy off = skip a cell"
 
 
 # --------------------------------------------------------------------------- text
-def _text_table(columns: List[str], rows: List[List[str]], unchanged: List[str]) -> str:
-    head = ["round"] + [c + (" (same)" if c in unchanged else "") for c in columns]
+def _text_table(columns: List[str], rows: List[List[str]], unchanged: List[str], step: str = "round") -> str:
+    head = [step] +[c + (" (same)" if c in unchanged else "") for c in columns]
     widths = [max([len(head[i])] + [len(r[i]) for r in rows]) for i in range(len(head))]
     line = lambda cells: "  ".join(c.ljust(w) for c, w in zip(cells, widths)).rstrip()  # noqa: E731
     return "\n".join([line(head), line(["-" * w for w in widths])] + [line(r) for r in rows])
@@ -119,8 +136,8 @@ def render_text(finding: Finding, state: LoopState, elapsed: Optional[float] = N
         "",
         finding.explanation,
         "",
-        "Last rounds checked:",
-        _text_table(columns, rows, unchanged) if columns else "(no variables to show)",
+        _table_title(state),
+        _text_table(columns, rows, unchanged, _step_word(state)) if columns else "(no variables to show)",
         "",
         "Hint: " + finding.hint,
         _footer(state, elapsed),
@@ -137,11 +154,11 @@ def _md_code(text: str) -> str:
     return "".join(out)
 
 
-def _html_table(columns, rows, unchanged, culprits) -> str:
+def _html_table(columns, rows, unchanged, culprits, step: str = "round") -> str:
     if not columns:
         return "<p><i>(no variables to show)</i></p>"
     th = "padding:2px 10px;text-align:left;border-bottom:1px solid rgba(128,128,128,.4)"
-    head = f"<th style='{th}'>round</th>"
+    head = f"<th style='{th}'>{step}</th>"
     for c in columns:
         mark = " <span style='font-weight:normal;opacity:.7'>(same)</span>" if c in unchanged else ""
         style = th + (";color:#d9480f" if c in culprits else "")
@@ -163,8 +180,8 @@ def render_html(finding: Finding, state: LoopState, elapsed: Optional[float] = N
         f"(line {state.info.lineno})</div>"
         f"<div style='margin:4px 0'><code>{html.escape(state.info.header)}</code></div>"
         f"<p style='margin:6px 0'>{_md_code(finding.explanation)}</p>"
-        f"<div style='opacity:.8;font-size:90%'>Last rounds checked:</div>"
-        f"{_html_table(columns, rows, unchanged, set(finding.culprits))}"
+        f"<div style='opacity:.8;font-size:90%'>{_table_title(state)}</div>"
+        f"{_html_table(columns, rows, unchanged, set(finding.culprits), _step_word(state))}"
         f"<p style='margin:6px 0'><b>Hint:</b> {_md_code(finding.hint)}</p>"
         f"<div style='opacity:.65;font-size:85%'>{html.escape(_footer(state, elapsed))}</div></div>"
     )
