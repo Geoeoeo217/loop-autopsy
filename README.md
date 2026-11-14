@@ -86,7 +86,7 @@ Every rule and its numbers are listed below, and every number can be changed (se
 | **Memory** about to run out | a loop filling a huge list | at 85% of the limit |
 | **Too long** (fallback) | anything else | 60 s |
 
-Plus two extras:
+Plus three extras:
 
 - **Press ■ yourself** and you still get the replay table, showing which
   variables never changed.
@@ -94,6 +94,12 @@ Plus two extras:
   red. It warns when memory passes 75% of your limit and names the biggest
   variables (pandas and NumPy aware). It also mutes output after 1,000 printed
   lines so the browser stays responsive.
+- **Session summary**: `%autopsy summary` shows every cell you have run as a strip
+  of coloured squares, then a table of the heaviest cells with their time, memory
+  and stopped loops. Here a cell is coloured only by what it did itself (its run
+  time and the memory it added), so one big dataframe does not turn every later
+  cell red. The health bar is different: it colours by total memory in use, to
+  warn you when you are close to the limit.
 
 ## Example use cases
 
@@ -134,6 +140,8 @@ c.InteractiveShellApp.extensions = ["loop_autopsy"]
 | `%autopsy on` / `off` | start / stop watching loops |
 | `%autopsy last` | show the last report again |
 | `%autopsy heatmap on` / `off` / `auto` | cell health bar (`auto` = only when a cell is slow or memory-heavy) |
+| `%autopsy summary` | the 10 heaviest cells of this session, worst first |
+| `%autopsy summary all` / `clear` | every cell in run order / forget the history |
 | `%autopsy config time_limit=120` | change a setting (see Settings below) |
 | `%%autopsy off` | first line of a cell: run that cell without watching |
 | `%autopsy help` | help |
@@ -162,6 +170,11 @@ Change any of these with `%autopsy config key=value` (for example `%autopsy conf
 | `heatmap` | `auto` | `on`, `off` or `auto` |
 | `time_yellow` / `time_red` | 1.0 / 10.0 | seconds for a yellow / red health bar |
 | `mem_yellow` / `mem_red` | 0.50 / 0.80 | memory fraction for a yellow / red health bar |
+| `history_cells` | 200 | cells remembered for `%autopsy summary` (0 = off) |
+| `grow_yellow` / `grow_red` | 0.05 / 0.20 | summary: memory one cell added, as a fraction of the limit, for a yellow / red square |
+
+The summary also uses `time_yellow` / `time_red` for a cell's run time. Its history
+lives in memory only and is gone when the kernel restarts.
 
 The memory limit is read from JupyterHub's `MEM_LIMIT` setting, then the container's
 memory limit, then the computer's total RAM.

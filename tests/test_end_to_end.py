@@ -72,3 +72,27 @@ def test_line_magic_commands(shell, capsys):
     capsys.readouterr()
     run(shell, "%autopsy last")
     assert "stuck loop" in capsys.readouterr().out
+
+
+def test_session_summary(shell, capsys):
+    def cell(code):
+        return shell.run_cell(code, store_history=True)
+
+    cell("total = sum(range(1000))")
+    cell("count = 1\nwhile count <= 5:\n    pass\n")
+    cell("1 / 0")
+    cell("%autopsy")  # our own command: not part of the summary
+    shell.run_cell("hidden = 1")  # no [number]: not part of the summary
+    capsys.readouterr()
+    cell("%autopsy summary all")
+    out = capsys.readouterr().out
+    assert "Session summary: 3 cells run" in out
+    assert "total = sum(range(1000))" in out and "hidden" not in out
+    assert "1 stopped" in out and "error" in out
+    cell("%autopsy summary")
+    assert "Worst cells first" in capsys.readouterr().out
+    cell("%autopsy summary clear")
+    cell("%autopsy summary")
+    assert "No cells recorded yet" in capsys.readouterr().out
+    cell("%autopsy summary nonsense")
+    assert "Usage: %autopsy summary" in capsys.readouterr().out
