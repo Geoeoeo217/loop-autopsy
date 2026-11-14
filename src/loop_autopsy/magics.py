@@ -9,6 +9,7 @@ HELP = """loop-autopsy commands
   %autopsy on | off         start / stop watching loops
   %autopsy last             show the last report again
   %autopsy heatmap on|off|auto   cell health bar (auto = only when worth seeing)
+  %autopsy summary [all|clear]   every cell run this session, heaviest first
   %autopsy config key=value ...  change a setting, e.g. %autopsy config time_limit=120
   %%autopsy off             (first line of a cell) run that cell without watching
 """
@@ -16,9 +17,10 @@ HELP = """loop-autopsy commands
 
 @magics_class
 class AutopsyMagics(Magics):
-    def __init__(self, shell, monitor):
+    def __init__(self, shell, monitor, health=None):
         super().__init__(shell)
         self.monitor = monitor
+        self.health = health  # CellHealth, for %autopsy summary
 
     @line_cell_magic
     def autopsy(self, line: str, cell: str = None):
@@ -51,6 +53,8 @@ class AutopsyMagics(Magics):
                 print(f"Cell health bar: {mode}")
             except ValueError as err:
                 print(err)
+        elif command == "summary" and self.health is not None:
+            self.health.summary(args[1].lower() if len(args) > 1 else "")
         elif command == "config":
             if len(args) == 1:
                 print("Usage: %autopsy config key=value [key=value ...]")

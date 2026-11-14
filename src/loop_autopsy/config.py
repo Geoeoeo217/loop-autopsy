@@ -85,6 +85,9 @@ class Settings:
     time_red: float = 10.0
     mem_yellow: float = 0.50
     mem_red: float = 0.80
+    history_cells: int = 200  # cells remembered for %autopsy summary (0 = off)
+    grow_yellow: float = 0.05  # summary colours: memory one cell added, as a fraction of the limit
+    grow_red: float = 0.20
 
     def update(self, key: str, raw: str) -> Any:
         """Set ``key`` from a string such as ``"30"``; returns the new value."""
