@@ -15,6 +15,7 @@ import re
 import sys
 import time
 from collections import deque
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any, Callable, Deque, Dict, Iterable, List, Optional, Tuple
 
@@ -31,7 +32,7 @@ _ONLY_AUTOPSY = re.compile(r"\s*%autopsy\b")  # a line that is just our own line
 
 # --------------------------------------------------------------------------- output guard
 class OutputGuard:
-    """Wraps sys.stdout and mutes it after ``max_lines`` printed lines."""
+    """Wraps sys.stdout or sys.stderr and mutes it after ``max_lines`` printed lines."""
 
     NOTICE = ("\n[loop-autopsy] Output muted after {n:,} lines to keep your browser responsive. "
               "The cell is still running; a stuck loop will still be stopped.\n")
@@ -60,8 +61,63 @@ class OutputGuard:
         self.lines += newlines
         return self._stream.write(text)
 
+    def reset(self) -> None:
+        """Start counting again (the output area was cleared)."""
+        self.lines, self.muted = 0, False
+
+    def release(self) -> None:
+        """The cell is over: pass everything through from now on. Code that kept
+        a reference to this guard (a logging handler, for example) keeps working."""
+        self.max_lines, self.muted = 0, False
+
     def __getattr__(self, name: str) -> Any:
         return getattr(self._stream, name)
+
+
+class DisplayGuard:
+    """Stands in for ``shell.display_pub.publish`` and mutes it after ``max_items``
+    calls, so a loop that calls ``display()`` every round cannot freeze the browser.
+
+    Updates to an existing output (``update=True``) replace it instead of adding
+    to the page, so they are never counted or muted.
+    """
+
+    NOTICE = ("[loop-autopsy] Display output muted after {n:,} items to keep your browser responsive. "
+              "The cell is still running; a stuck loop will still be stopped.")
+
+    def __init__(self, publish: Callable[..., Any], max_items: int):
+        self._publish = publish
+        self.max_items = max_items
+        self.items = 0
+        self.muted = False
+        self._unguarded = 0
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        if self._unguarded or not self.max_items or kwargs.get("update"):
+            return self._publish(*args, **kwargs)
+        if self.muted:
+            return None
+        self.items += 1
+        result = self._publish(*args, **kwargs)
+        if self.items >= self.max_items:
+            self.muted = True
+            self._publish(data={"text/plain": self.NOTICE.format(n=self.max_items)})
+        return result
+
+    @contextmanager
+    def unguarded(self):
+        """Reports are shown inside this, so they are never counted or muted."""
+        self._unguarded += 1
+        try:
+            yield
+        finally:
+            self._unguarded -= 1
+
+    def reset(self) -> None:
+        self.items, self.muted = 0, False
+
+    def release(self) -> None:
+        self.max_items, self.muted = 0, False
 
 
 # --------------------------------------------------------------------------- bar
@@ -272,8 +328,12 @@ class CellHealth:
         self._rss0: Optional[int] = None
         self._raw_cell = ""
         self._numbered = False
-        self._guard: Optional[OutputGuard] = None
+        self._guard: Optional[OutputGuard] = None  # sys.stdout
+        self._err_guard: Optional[OutputGuard] = None  # sys.stderr
+        self._display_guard: Optional[DisplayGuard] = None  # display()
+        self._clear_hook = None
         self._saved_stdout = None
+        self._saved_stderr = None
 
     def register(self) -> None:
         self.shell.events.register("pre_run_cell", self.pre_run_cell)
@@ -297,9 +357,11 @@ class CellHealth:
         self._t0 = time.perf_counter()
         self._rss0 = current_rss()
         if self.settings.max_output_lines:
-            self._saved_stdout = sys.stdout
+            self._saved_stdout, self._saved_stderr = sys.stdout, sys.stderr
             self._guard = OutputGuard(sys.stdout, self.settings.max_output_lines)
-            sys.stdout = self._guard
+            self._err_guard = OutputGuard(sys.stderr, self.settings.max_output_lines)
+            sys.stdout, sys.stderr = self._guard, self._err_guard
+        self._guard_display()
 
     def post_run_cell(self, result=None) -> None:
         if self.depth == 0:
@@ -307,7 +369,7 @@ class CellHealth:
         self.depth -= 1
         if self.depth:
             return
-        muted = bool(self._guard is not None and self._guard.muted)
+        muted = any(g is not None and g.muted for g in (self._guard, self._err_guard, self._display_guard))
         self._restore_stdout()
         elapsed = time.perf_counter() - self._t0
         rss, limit = current_rss(), memory_limit()
@@ -361,7 +423,38 @@ class CellHealth:
             else:
                 print(text)
 
+    # ------------------------------------------------------------------ output guards
+    def _guard_display(self) -> None:
+        """Put a DisplayGuard in front of ``display()`` for this cell, and reset
+        every guard when the output area is cleared (animations clear and redraw)."""
+        pub = getattr(self.shell, "display_pub", None)
+        if pub is None or not (self.settings.max_displays or self.settings.max_output_lines):
+            return
+        self._display_guard = DisplayGuard(pub.publish, self.settings.max_displays)
+        pub.publish = self._display_guard  # instance attribute: hides the class's method
+        original_clear = getattr(pub, "clear_output", None)
+        if original_clear is not None:
+            def clear_output(*args: Any, **kwargs: Any) -> Any:
+                for guard in (self._guard, self._err_guard, self._display_guard):
+                    if guard is not None:
+                        guard.reset()
+                return original_clear(*args, **kwargs)
+
+            self._clear_hook = pub.clear_output = clear_output
+
     def _restore_stdout(self) -> None:
+        """Take every guard away again. Only undo what is still ours: something
+        else may have replaced a stream in the meantime."""
         if self._guard is not None and sys.stdout is self._guard:
             sys.stdout = self._saved_stdout
-        self._guard = None
+        if self._err_guard is not None and sys.stderr is self._err_guard:
+            sys.stderr = self._saved_stderr
+        pub = getattr(self.shell, "display_pub", None)
+        if pub is not None:
+            for name, ours in (("publish", self._display_guard), ("clear_output", self._clear_hook)):
+                if ours is not None and vars(pub).get(name) is ours:
+                    delattr(pub, name)
+        for guard in (self._guard, self._err_guard, self._display_guard):
+            if guard is not None:
+                guard.release()
+        self._guard = self._err_guard = self._display_guard = self._clear_hook = None

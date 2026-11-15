@@ -85,15 +85,27 @@ Every rule and its numbers are listed below, and every number can be changed (se
 | **Growing list** in a `for` loop | `for n in nums: nums.append(n)` | 2,000 rounds |
 | **Memory** about to run out | a loop filling a huge list | at 85% of the limit |
 | **Too long** (fallback) | anything else | 60 s |
+| **Runaway recursion** | `def f(n): return f(n - 2)` | when Python raises `RecursionError` |
 
-Plus three extras:
+Runaway recursion is the recursive cousin of an infinite loop. Python already
+stops it, but with a traceback hundreds of lines long. loop-autopsy replaces that
+with a report: which function kept calling itself (or which functions kept
+calling each other), its arguments in the first and last calls, and why the base
+case was never reached. It tells apart arguments that never change, arguments
+that go round in a circle, a value that jumped past 0, a value moving the wrong
+way, and a function that may be correct but needs more depth than Python allows.
+
+Plus four extras:
 
 - **Press ■ yourself** and you still get the replay table, showing which
   variables never changed.
 - **Cell health bar**: time, memory and loops for a cell, coloured green / yellow /
   red. It warns when memory passes 75% of your limit and names the biggest
-  variables (pandas and NumPy aware). It also mutes output after 1,000 printed
-  lines so the browser stays responsive.
+  variables (pandas and NumPy aware).
+- **Output guard**: a cell's output is muted after 1,000 printed lines, so the
+  browser stays responsive. This covers `print`, error output (`sys.stderr`) and,
+  after 200 items, `display()` (tables, plots). Animations that clear the output
+  and redraw are not muted, because `clear_output()` starts the count again.
 - **Session summary**: `%autopsy summary` shows every cell you have run as a strip
   of coloured squares, then a table of the heaviest cells with their time, memory
   and stopped loops. Here a cell is coloured only by what it did itself (its run
@@ -164,7 +176,8 @@ Change any of these with `%autopsy config key=value` (for example `%autopsy conf
 | `growth_after` | 2000 | rounds before a growing list in a `for` loop is reported |
 | `memory_stop` | 0.85 | stop a loop when memory reaches this fraction of the limit |
 | `memory_warn` | 0.75 | health bar warning at this fraction of the limit |
-| `max_output_lines` | 1000 | printed lines per cell before output is muted (0 = off) |
+| `max_output_lines` | 1000 | printed lines per cell before output is muted, counted separately for normal and error output (0 = off) |
+| `max_displays` | 200 | `display()` calls per cell before they are muted (0 = off) |
 | `replay_rows` | 6 | rows in the replay table |
 | `max_watched` | 25 | variables watched per loop |
 | `heatmap` | `auto` | `on`, `off` or `auto` |
@@ -179,7 +192,7 @@ lives in memory only and is gone when the kernel restarts.
 The memory limit is read from JupyterHub's `MEM_LIMIT` setting, then the container's
 memory limit, then the computer's total RAM.
 
-## Limitations (honest list)
+## Limitations 
 
 - No tool can detect *every* infinite loop (the halting problem). loop-autopsy
   only reports a stuck, cycling, wrong-direction or jumped-over loop when it can
@@ -190,6 +203,9 @@ memory limit, then the computer's total RAM.
 - Watching adds a small cost to each loop round (roughly 0.1–0.2 µs per round on
   simple loops). Use `%%autopsy off` for heavy number crunching.
 - A bare `except:` inside a loop can catch the stop signal, just as it catches ■.
+- Runaway recursion is explained only for functions typed in notebook cells, and
+  only when the `RecursionError` reaches the top of the cell. A `RecursionError`
+  your own code catches is left alone.
 
 ## Development
 
@@ -204,13 +220,13 @@ pytest
 
 Built by a team of five for CS1302 (Introduction to Computer Programming).
 
-| Member | Part |
-|---|---|
-| NATHANAEL George Steindhart | project lead: loop rewriting (`transformer.py`), run-time glue (`monitor.py`), magics, packaging |
-| SETIAWAN Matthew Henson | detection rules: stuck, cycle, wrong direction, jumped over, time limit (`detectors.py`) |
-| LATHIF Muhammad Akmal | memory and growing-list rules (`growth.py`) |
-| KWAN Kendrick Matthew | replay table and reports (`report.py`) |
-| HANDAYA Clement Steward | cell health bar and output guard (`heatmap.py`) |
+| Member                      | Part                                                                                                                         |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| NATHANAEL George Steindhart | project lead: loop rewriting (`transformer.py`), run-time glue (`monitor.py`), magics, packaging                             |
+| SETIAWAN Matthew Henson     | detection rules: stuck, cycle, wrong direction, jumped over, time limit (`detectors.py`), runaway recursion (`recursion.py`) |
+| LATHIF Muhammad Akmal       | memory and growing-list rules (`growth.py`)                                                                                  |
+| KWAN Kendrick Matthew       | replay table and reports (`report.py`)                                                                                       |
+| HANDAYA Clement Steward     | cell health bar, session summary and output guard (`heatmap.py`)                                                             |
 
 
 ## License

@@ -96,3 +96,21 @@ def test_session_summary(shell, capsys):
     assert "No cells recorded yet" in capsys.readouterr().out
     cell("%autopsy summary nonsense")
     assert "Usage: %autopsy summary" in capsys.readouterr().out
+
+
+def test_stderr_and_display_floods_are_muted(shell, capsys):
+    run(shell, "%autopsy config max_output_lines=20 max_displays=5")
+    capsys.readouterr()
+    assert run(shell, "import sys\nfor i in range(300):\n    print('warn', i, file=sys.stderr)\n") is None
+    err = capsys.readouterr().err
+    assert "warn 19" in err and "warn 20" not in err and err.count("Output muted") == 1
+    assert run(shell, "from IPython.display import display\nfor i in range(300):\n    display(i)\n") is None
+    out = capsys.readouterr().out
+    assert out.count("Display output muted after 5 items") == 1 and "299" not in out
+    # The next cell starts with a clean slate, and a stopped loop's report still shows.
+    assert run(shell, "print('fresh'); print('err ok', file=sys.stderr); display('shown')") is None
+    captured = capsys.readouterr()
+    assert "fresh" in captured.out and "shown" in captured.out and "err ok" in captured.err
+    run(shell, "for i in range(300):\n    display(i)\nk = 1\nwhile k <= 5:\n    pass\n")
+    out = capsys.readouterr().out
+    assert "Display output muted" in out and "Loop autopsy" in out

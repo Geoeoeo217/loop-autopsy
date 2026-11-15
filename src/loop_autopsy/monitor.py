@@ -12,7 +12,7 @@ import types
 from contextlib import contextmanager
 from typing import Any, Dict, List, Optional, Tuple
 
-from . import detectors, growth, report
+from . import detectors, growth, recursion, report
 from .config import Finding, LoopInfo, LoopState, LoopStopped, Settings
 
 _TIMEIT = re.compile(r"^\s*%%?timeit\b", re.MULTILINE)
@@ -138,7 +138,7 @@ class Monitor:
 
     def install_exception_handler(self) -> None:
         self._old_exc = (self.shell.custom_exceptions, getattr(self.shell, "CustomTB", None))
-        self.shell.set_custom_exc((LoopStopped, KeyboardInterrupt), self._handle)
+        self.shell.set_custom_exc((LoopStopped, KeyboardInterrupt, RecursionError), self._handle)
 
     def remove_exception_handler(self) -> None:
         if self._old_exc is None:
@@ -153,6 +153,8 @@ class Monitor:
         if issubclass(etype, LoopStopped):
             self.show_last()
             return []
+        if issubclass(etype, RecursionError):
+            return self._handle_recursion(shell, etype, value, tb, tb_offset)
         # KeyboardInterrupt: keep IPython's normal message, then add the replay.
         shell.showtraceback((etype, value, _without_our_frames(tb)), tb_offset=tb_offset)
         state = self.active
@@ -163,4 +165,21 @@ class Monitor:
             self.last = (finding, state, elapsed)
             report.display_report(report.render_text(finding, state, elapsed),
                                   report.render_html(finding, state, elapsed))
+        return []
+
+    def _handle_recursion(self, shell, etype, value, tb, tb_offset=None):
+        """Replace the long RecursionError traceback with a report, when the
+        recursion happened in a function typed in a notebook cell."""
+        explained = None
+        if self.enabled:
+            try:
+                explained = recursion.explain(shell, tb, self.settings.replay_rows, self.settings.max_watched)
+            except Exception:  # never let the explanation hide the real error
+                explained = None
+        if explained is None:
+            shell.showtraceback((etype, value, _without_our_frames(tb)), tb_offset=tb_offset)
+            return []
+        finding, state = explained
+        self.last = (finding, state, None)
+        self.show_last()
         return []
