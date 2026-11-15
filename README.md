@@ -1,5 +1,7 @@
 # loop-autopsy
 
+[![tests](https://github.com/Geoeoeo217/loop-autopsy/actions/workflows/tests.yml/badge.svg)](https://github.com/Geoeoeo217/loop-autopsy/actions/workflows/tests.yml)
+
 **Stops runaway loops in Jupyter and shows the evidence for why they never ended.**
 
 ```python
@@ -200,8 +202,10 @@ memory limit, then the computer's total RAM.
 - Loops that call your own functions or modules such as `random` cannot be proven
   stuck (those calls might change hidden state), so they rely on the time limit.
 - Only code typed in notebook cells is watched, not code inside imported modules.
-- Watching adds a small cost to each loop round (roughly 0.1–0.2 µs per round on
-  simple loops). Use `%%autopsy off` for heavy number crunching.
+- Watching adds a small cost to each loop round: roughly 0.1–0.3 µs, measured with
+  `benchmarks/overhead.py` on Python 3.12. That is invisible when a round does real
+  work, but a loop that does almost nothing per round (such as `i += 1`) runs
+  about 3 to 10 times slower. Use `%%autopsy off` for heavy number crunching.
 - A bare `except:` inside a loop can catch the stop signal, just as it catches ■.
 - Runaway recursion is explained only for functions typed in notebook cells, and
   only when the `RecursionError` reaches the top of the cell. A `RecursionError`
@@ -214,6 +218,15 @@ git clone https://github.com/Geoeoeo217/loop-autopsy
 cd loop-autopsy
 pip install -e ".[test]"
 pytest
+```
+
+The tests also run on GitHub for every push and pull request, on Python 3.9 to
+3.13 (Linux) and on Windows and macOS: see `.github/workflows/tests.yml`.
+
+To measure what watching costs per loop round on your own computer:
+
+```bash
+python benchmarks/overhead.py
 ```
 
 ## Team
