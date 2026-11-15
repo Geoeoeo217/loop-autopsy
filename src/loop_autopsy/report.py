@@ -214,7 +214,12 @@ def display_report(text: str, html_text: str) -> None:
 
         shell = get_ipython()
         if shell is not None and shell.__class__.__name__ == "ZMQInteractiveShell":
-            display(HTML(html_text))
+            guard = getattr(shell.display_pub.publish, "unguarded", None)  # skip the display guard
+            if guard is None:
+                display(HTML(html_text))
+            else:
+                with guard():
+                    display(HTML(html_text))
             return
     except Exception:
         pass

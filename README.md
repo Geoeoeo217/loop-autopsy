@@ -95,14 +95,17 @@ case was never reached. It tells apart arguments that never change, arguments
 that go round in a circle, a value that jumped past 0, a value moving the wrong
 way, and a function that may be correct but needs more depth than Python allows.
 
-Plus three extras:
+Plus four extras:
 
 - **Press ■ yourself** and you still get the replay table, showing which
   variables never changed.
 - **Cell health bar**: time, memory and loops for a cell, coloured green / yellow /
   red. It warns when memory passes 75% of your limit and names the biggest
-  variables (pandas and NumPy aware). It also mutes output after 1,000 printed
-  lines so the browser stays responsive.
+  variables (pandas and NumPy aware).
+- **Output guard**: a cell's output is muted after 1,000 printed lines, so the
+  browser stays responsive. This covers `print`, error output (`sys.stderr`) and,
+  after 200 items, `display()` (tables, plots). Animations that clear the output
+  and redraw are not muted, because `clear_output()` starts the count again.
 - **Session summary**: `%autopsy summary` shows every cell you have run as a strip
   of coloured squares, then a table of the heaviest cells with their time, memory
   and stopped loops. Here a cell is coloured only by what it did itself (its run
@@ -173,7 +176,8 @@ Change any of these with `%autopsy config key=value` (for example `%autopsy conf
 | `growth_after` | 2000 | rounds before a growing list in a `for` loop is reported |
 | `memory_stop` | 0.85 | stop a loop when memory reaches this fraction of the limit |
 | `memory_warn` | 0.75 | health bar warning at this fraction of the limit |
-| `max_output_lines` | 1000 | printed lines per cell before output is muted (0 = off) |
+| `max_output_lines` | 1000 | printed lines per cell before output is muted, counted separately for normal and error output (0 = off) |
+| `max_displays` | 200 | `display()` calls per cell before they are muted (0 = off) |
 | `replay_rows` | 6 | rows in the replay table |
 | `max_watched` | 25 | variables watched per loop |
 | `heatmap` | `auto` | `on`, `off` or `auto` |

@@ -78,6 +78,7 @@ class Settings:
     memory_stop: float = 0.85
     memory_warn: float = 0.75
     max_output_lines: int = 1000
+    max_displays: int = 200  # display() calls per cell before they are muted (0 = off)
     replay_rows: int = 6
     max_watched: int = 25
     heatmap: str = "auto"  # on | off | auto
