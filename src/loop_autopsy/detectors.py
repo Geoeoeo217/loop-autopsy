@@ -206,31 +206,44 @@ def check_direction(info: LoopInfo, state: LoopState, values: Dict[str, Any],
     if not (_numeric(a) and _numeric(b)):
         return None
     s = state.scratch
-    moving = left if left[0] == "name" else right  # the variable side we talk about
-    var = moving[1]
-    target = b if moving is left else a
-    now_val = values.get(var)
+    sides = (left, right)
+    now = (a, b)  # both sides are remembered: with two variables, either one may be the one that moves
 
     if op == "!=":
         gap = b - a
         prev = s.get("jump_prev")
         if prev is not None and (prev > 0) != (gap > 0):
-            s["jump_crossed"] = (s.get("jump_prev_val"), now_val)
+            s["jump_crossed"] = (s.get("jump_prev_val"), now)
             s["jump_streak"] = 0
         elif s.get("jump_crossed") and prev is not None and abs(gap) > abs(prev):
             s["jump_streak"] = s.get("jump_streak", 0) + 1
         elif s.get("jump_crossed"):
             s["jump_streak"] = 0
-        s["jump_prev"], s["jump_prev_val"] = gap, now_val
+        s["jump_prev"], s["jump_prev_val"] = gap, now
         if s.get("jump_crossed") and s.get("jump_streak", 0) >= settings.jump_after:
             before, after = s["jump_crossed"]
+            moved = _moved(sides, before, after)
+            if len(moved) == 2:
+                first, second = left[1], right[1]
+                return Finding(
+                    "jumped_over", "loop jumped over its stop value",
+                    f"`{info.test_src}` only becomes False when `{first}` and `{second}` are exactly equal. "
+                    f"`{first}` went from {_show(before[0])} to {_show(after[0])} and `{second}` from "
+                    f"{_show(before[1])} to {_show(after[1])}, passing each other without ever being equal, "
+                    f"and they have moved further apart ever since (now {_show(a)} and {_show(b)}).",
+                    f"Use `<` or `>` instead of `!=` in the condition, or change the steps so `{first}` "
+                    f"and `{second}` land on the same value.",
+                    (first, second),
+                )
+            i = moved[0]
+            var, target = sides[i][1], _other_side(sides[1 - i], now[1 - i])
             return Finding(
                 "jumped_over", "loop jumped over its stop value",
-                f"`{info.test_src}` only becomes False when `{var}` is exactly {_show(target)}. "
-                f"`{var}` went from {_show(before)} to {_show(after)}, jumping over {_show(target)}, "
-                f"and has moved further away ever since (now {_show(now_val)}).",
+                f"`{info.test_src}` only becomes False when `{var}` is exactly {target}. "
+                f"`{var}` went from {_show(before[i])} to {_show(after[i])}, jumping over {target}, "
+                f"and has moved further away ever since (now {_show(now[i])}).",
                 f"Use `<` or `>` instead of `!=` in the condition, or change the step so `{var}` "
-                f"lands exactly on {_show(target)}.",
+                f"lands exactly on {target}.",
                 (var,),
             )
         return None
@@ -243,17 +256,52 @@ def check_direction(info: LoopInfo, state: LoopState, values: Dict[str, Any],
         s["dir_streak"] = s.get("dir_streak", 0) + 1
     else:
         s["dir_streak"] = 0
-    s["dir_prev"], s["dir_prev_val"] = gap, now_val
+    s["dir_prev"], s["dir_prev_val"] = gap, now
     if s.get("dir_streak", 0) >= settings.direction_after:
+        start = s["dir_start"]
+        moved = _moved(sides, start, now)
+        if len(moved) == 2:
+            first, second = left[1], right[1]
+            return Finding(
+                "wrong_direction", "loop moving the wrong way",
+                f"The loop stops when `{info.test_src}` becomes False, which needs `{first}` and `{second}` "
+                f"to meet. But over the last {s['dir_streak']:,} checks they moved further apart every time: "
+                f"`{first}` went from {_show(start[0])} to {_show(a)} and `{second}` from {_show(start[1])} "
+                f"to {_show(b)}.",
+                f"Check the lines that update `{first}` and `{second}`: at least one of them should go "
+                f"the other way.",
+                (first, second),
+            )
+        i = moved[0]
+        var, target = sides[i][1], _other_side(sides[1 - i], now[1 - i])
+        fix = "`-=` instead of `+=`" if now[i] > start[i] else "`+=` instead of `-=`"
         return Finding(
             "wrong_direction", "loop moving the wrong way",
-            f"The loop stops when `{info.test_src}` becomes False, which needs `{var}` to reach {_show(target)}. "
-            f"But over the last {s['dir_streak']:,} checks `{var}` went from {_show(s.get('dir_start'))} "
-            f"to {_show(now_val)}, moving further away from {_show(target)} every time.",
-            f"Check the line that updates `{var}`: should it go the other way (for example `+=` instead of `-=`)?",
+            f"The loop stops when `{info.test_src}` becomes False, which needs `{var}` to reach {target}. "
+            f"But over the last {s['dir_streak']:,} checks `{var}` went from {_show(start[i])} "
+            f"to {_show(now[i])}, moving further away from {target} every time.",
+            f"Check the line that updates `{var}`: should it go the other way (for example {fix})?",
             (var,),
         )
     return None
+
+
+def _moved(sides, before, after):
+    """Which sides of the comparison changed between two readings: ``[0]`` for
+    the left one, ``[1]`` for the right one, ``[0, 1]`` for both.
+
+    Only variables count. ``while lo < hi`` can go wrong because ``lo`` moves,
+    because ``hi`` moves, or both, and the report must name the right one.
+    """
+    names = [i for i, side in enumerate(sides) if side[0] == "name"]
+    changed = [i for i in names if before[i] != after[i]]
+    return changed or names[:1]
+
+
+def _other_side(side, value) -> str:
+    """How the side a variable is compared with is shown: its value, with its
+    name in front when it is a variable too."""
+    return _show(value) if side[0] == "const" else f"`{side[1]}` ({_show(value)})"
 
 
 # --------------------------------------------------------------------------- R7

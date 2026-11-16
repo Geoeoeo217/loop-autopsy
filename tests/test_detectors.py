@@ -224,28 +224,69 @@ def test_wrong_direction_with_the_variable_on_the_right():
     assert finding.kind == "wrong_direction" and finding.culprits == ("x",)
 
 
-def two_variable_finding():
-    """``while lo < hi`` where ``lo`` stands still and ``hi`` runs away from it."""
-    cfg = Settings(direction_after=10)
-    state = make_state(test_src="lo < hi", cond_names=("lo", "hi"), watched=("lo", "hi"),
-                       compare=(("name", "lo"), "<", ("name", "hi")))
+def two_variables(op, readings, **settings):
+    """Run ``while lo <op> hi`` through the rule; ``readings`` are (lo, hi) pairs."""
+    cfg = Settings(**settings)
+    state = make_state(test_src=f"lo {op} hi", cond_names=("lo", "hi"), watched=("lo", "hi"),
+                       compare=(("name", "lo"), op, ("name", "hi")))
     finding = None
-    for i in range(30):
+    for lo, hi in readings:
         finding = finding or step(state, lambda info, st, v: check_direction(info, st, v, cfg),
-                                  {"lo": 0, "hi": 10 + i})
+                                  {"lo": lo, "hi": hi})
     return finding
 
 
-def test_wrong_direction_between_two_variables():
-    assert two_variable_finding().kind == "wrong_direction"
+def test_wrong_direction_names_the_right_hand_variable_when_it_is_the_one_moving():
+    finding = two_variables("<", [(0, 10 + i) for i in range(30)], direction_after=10)
+    assert finding.kind == "wrong_direction" and finding.culprits == ("hi",)
+    assert "needs `hi` to reach `lo` (0)" in finding.explanation
+    assert "`hi` went from 10 to 20" in finding.explanation
+    assert "from 0 to 0" not in finding.explanation  # the old report blamed `lo`, which never moved
+    assert "updates `hi`" in finding.hint and "`-=` instead of `+=`" in finding.hint
 
 
-@pytest.mark.xfail(strict=True, reason="known bug: the report always talks about the left-hand variable, "
-                                       "so here it says `lo` went from 0 to 0 and blames `lo`")
-def test_wrong_direction_names_the_variable_that_moved():
-    finding = two_variable_finding()
-    assert "hi" in finding.culprits
-    assert "from 0 to 0" not in finding.explanation
+def test_wrong_direction_names_the_left_hand_variable_when_it_is_the_one_moving():
+    finding = two_variables("<", [(-i, 10) for i in range(30)], direction_after=10)
+    assert finding.culprits == ("lo",)
+    assert "needs `lo` to reach `hi` (10)" in finding.explanation
+    assert "`lo` went from 0 to -10" in finding.explanation
+    assert "updates `lo`" in finding.hint and "`+=` instead of `-=`" in finding.hint
+
+
+def test_wrong_direction_names_both_variables_when_both_move():
+    finding = two_variables("<", [(-i, 10 + 2 * i) for i in range(30)], direction_after=10)
+    assert finding.kind == "wrong_direction" and finding.culprits == ("lo", "hi")
+    assert "needs `lo` and `hi` to meet" in finding.explanation
+    assert "`lo` went from 0 to -10 and `hi` from 10 to 30" in finding.explanation
+    assert "update `lo` and `hi`" in finding.hint
+
+
+def test_wrong_direction_hint_suggests_the_step_that_would_help():
+    """The example in the hint must point the right way: a value that climbs
+    needs ``-=``, a value that falls needs ``+=``."""
+    rising = make_state(test_src="x > 0", compare=(("name", "x"), ">", ("const", 0)))
+    finding = [f for f in run_direction(rising, range(1, 40), direction_after=10) if f][0]
+    assert "`-=` instead of `+=`" in finding.hint
+    falling = make_state()  # while x < 5
+    finding = [f for f in run_direction(falling, range(0, -40, -1), direction_after=10) if f][0]
+    assert "`+=` instead of `-=`" in finding.hint
+
+
+def test_jumped_over_names_the_right_hand_variable_when_it_is_the_one_moving():
+    finding = two_variables("!=", [(10, 3 * i) for i in range(30)], jump_after=10)
+    assert finding.kind == "jumped_over" and finding.culprits == ("hi",)
+    assert "when `hi` is exactly `lo` (10)" in finding.explanation
+    assert "`hi` went from 9 to 12, jumping over `lo` (10)" in finding.explanation
+
+
+def test_jumped_over_names_both_variables_when_both_move():
+    # lo climbs by 2 and hi falls by 1: 10 and 11, then 12 and 10. They are never equal.
+    finding = two_variables("!=", [(2 * i, 16 - i) for i in range(40)], jump_after=10)
+    assert finding.kind == "jumped_over" and finding.culprits == ("lo", "hi")
+    assert "when `lo` and `hi` are exactly equal" in finding.explanation
+    assert "`lo` went from 10 to 12 and `hi` from 11 to 10" in finding.explanation
+    assert "passing each other without ever being equal" in finding.explanation
+    assert "land on the same value" in finding.hint
 
 
 def test_a_step_in_the_right_direction_resets_the_count():
@@ -259,7 +300,8 @@ def test_jumping_over_and_coming_back_is_not_reported():
     state = make_state(test_src="x != 10", compare=(("name", "x"), "!=", ("const", 10)))
     xs = [0, 4, 8, 12] + [12 - 0.01 * k for k in range(1, 150)]  # overshoots, then creeps back
     assert run_direction(state, xs, jump_after=10) == [None] * len(xs)
-    assert state.scratch["jump_crossed"] == (8, 12) and state.scratch["jump_streak"] == 0
+    # Both sides of the comparison are remembered: (x, 10) just before and just after the jump.
+    assert state.scratch["jump_crossed"] == ((8, 10), (12, 10)) and state.scratch["jump_streak"] == 0
 
 
 def test_jumped_over_with_floats_names_both_sides_of_the_jump():

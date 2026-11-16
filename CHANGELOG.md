@@ -5,6 +5,11 @@ Version numbers follow [Semantic Versioning](https://semver.org/).
 
 ## Unreleased
 
+- Fixed: for a condition that compares two variables, such as `while lo < hi`,
+  the "wrong direction" and "jumped over" reports now name the variable that
+  actually moved (or both). They used to blame the left one even when it never
+  changed. The hint's example (`+=` or `-=`) now also points the right way.
+
 - Tests that run cells in a real Jupyter kernel (`tests/test_real_kernel.py`),
   including the whole demo notebook.
 - The demo notebook is saved with its outputs; `python examples/refresh_demo.py`
