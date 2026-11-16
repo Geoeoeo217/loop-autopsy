@@ -5,6 +5,8 @@
 Each member looks after their own modules and their tests. To change someone
 else's module, open an issue or ask them first.
 
+gweihdqwi dhiquhdiu qhw wefhiehfiuewfhi uewhfiuhweifuhwiuefhiwuhefuiwheifhwiuefhowfiuewhfuihweui fhiwuhfiuuwhfuiohweufhiuwhe fiuewhifuhweuihfiuehw fui ehwiehqohqohefoqhfoihwoifehewuohf o ewhoiehfoiahfio h aiofyaiohfoi eyhfoy wofywofyoyf qo
+
 | Member | Files |
 |---|---|
 | NATHANAEL George Steindhart | `pyproject.toml`, `README.md`, `CHANGELOG.md`, `CONTRIBUTING.md`, `src/loop_autopsy/config.py`, `transformer.py`, `monitor.py`, `magics.py`, `__init__.py`, `examples/demo.ipynb`, `tests/test_transformer.py`, `tests/test_end_to_end.py` |
