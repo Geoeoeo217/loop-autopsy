@@ -81,6 +81,18 @@ def test_commands_in_the_docs_are_real(shell, capsys):
         assert "loop-autopsy commands" not in capsys.readouterr().out, command
 
 
+def test_demo_notebook_is_saved_with_its_outputs():
+    """GitHub shows saved outputs only. Refresh them with examples/refresh_demo.py."""
+    import json
+
+    cells = [c for c in json.loads(read("examples/demo.ipynb"))["cells"] if c["cell_type"] == "code"]
+    empty = [first for first, c in ((("".join(c["source"]).splitlines() or [""])[0], c) for c in cells)
+             if not c["outputs"] and not first.startswith("%pip")]
+    assert not empty, f"run `python examples/refresh_demo.py`; cells without output: {empty}"
+    saved = json.dumps([c["outputs"] for c in cells])
+    assert "Traceback (most recent call last)" not in saved, "the demo was saved with a crash in it"
+
+
 def test_readme_has_no_duplicated_lines():
     """A bad merge once left the same sentence in the README twice."""
     lines = [ln.strip() for ln in read("README.md").splitlines()]

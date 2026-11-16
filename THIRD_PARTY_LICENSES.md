@@ -11,6 +11,8 @@ them separately, so each one stays under its own license.
 | [psutil](https://github.com/giampaolo/psutil) | **Optional.** `growth.py` uses it, only if installed, to read total RAM and the memory used by the kernel. Without it the code falls back to `/proc` and `resource`. | BSD-3-Clause |
 | [pytest](https://pytest.org) | **Development only.** Runs the tests (`[test]` extra in `pyproject.toml`). | MIT |
 | [pytest-cov](https://github.com/pytest-dev/pytest-cov) | **Development only.** Reports which lines the tests cover, in CI (`[test]` extra in `pyproject.toml`). | MIT |
+| [nbclient](https://github.com/jupyter/nbclient) | **Development only.** Runs notebook cells for `tests/test_real_kernel.py` and `examples/refresh_demo.py` (`[test]` extra in `pyproject.toml`). | BSD-3-Clause |
+| [ipykernel](https://github.com/ipython/ipykernel) | **Development only.** The Jupyter kernel those tests start (`[test]` extra in `pyproject.toml`). | BSD-3-Clause |
 
 Licenses are as declared in each package's own metadata when this file was written.
 

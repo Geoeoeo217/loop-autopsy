@@ -29,7 +29,7 @@ classifiers = [
 dependencies = ["ipython>=7.0"]
 
 [project.optional-dependencies]
-test = ["pytest", "pytest-cov"]
+test = ["pytest", "pytest-cov", "nbclient", "ipykernel"]
 
 [project.urls]
 Homepage = "https://github.com/Geoeoeo217/loop-autopsy"

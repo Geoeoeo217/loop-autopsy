@@ -225,6 +225,18 @@ pytest
 The tests also run on GitHub for every push and pull request, on Python 3.9 to
 3.13 (Linux) and on Windows and macOS: see `.github/workflows/tests.yml`.
 
+Some tests start a real Jupyter kernel and run notebook cells in it, including
+the whole demo notebook, because a notebook shows output differently from a
+terminal. They are skipped if `nbclient` and `ipykernel` are not installed; the
+`[test]` extra installs both.
+
+After changing the demo notebook, save it with fresh outputs, since GitHub only
+shows saved outputs:
+
+```bash
+python examples/refresh_demo.py
+```
+
 To measure what watching costs per loop round on your own computer:
 
 ```bash

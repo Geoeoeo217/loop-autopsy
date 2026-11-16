@@ -5,6 +5,12 @@ Version numbers follow [Semantic Versioning](https://semver.org/).
 
 ## Unreleased
 
+- Tests that run cells in a real Jupyter kernel (`tests/test_real_kernel.py`),
+  including the whole demo notebook.
+- The demo notebook is saved with its outputs; `python examples/refresh_demo.py`
+  runs it again and saves them.
+- Many more tests for `growth.py` (now fully covered) and `detectors.py`.
+
 - `pytest` now runs straight from a fresh clone, without `pip install -e` first.
 - Output guard also mutes `stderr` and `display()` output after the line limit.
 - Continuous integration on GitHub Actions: Python 3.9–3.13 on Linux, plus
