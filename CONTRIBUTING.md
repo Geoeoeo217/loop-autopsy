@@ -10,7 +10,7 @@ else's module, open an issue or ask them first.
 | NATHANAEL George Steindhart | `pyproject.toml`, `README.md`, `CHANGELOG.md`, `CONTRIBUTING.md`, `src/loop_autopsy/config.py`, `transformer.py`, `monitor.py`, `magics.py`, `__init__.py`, `examples/demo.ipynb`, `tests/test_transformer.py`, `tests/test_end_to_end.py` |
 | SETIAWAN Matthew Henson | `detectors.py`, `recursion.py`, `tests/test_detectors.py`, `tests/test_recursion.py` |
 | LATHIF Muhammad Akmal | `growth.py`, `THIRD_PARTY_LICENSES.md`, `tests/test_growth.py`, `tests/test_memory_overview.py`, `tests/test_license.py` |
-| KWAN Kendrick Matthew | `report.py`, `tests/test_report.py`, `report_i18n.py`, `report_theme.py`, `test_report_i18n.py`, `test_report_theme.py`, `test_report_accessibility.py`, `test_report_accessibility`, `test_report_export.py`|
+| KWAN Kendrick Matthew | `report.py`, `tests/test_report.py`, `report_i18n.py`, `report_theme.py`, `tests/test_report_i18n.py`, `tests/test_report_theme.py`, `report_accessibility.py`, `tests/test_report_accessibility`, `report_export.py`, `tests/test_report_export.py`|
 | HANDAYA Clement Steward | `heatmap.py`, `.github/workflows/tests.yml`, `benchmarks/`, `tests/test_heatmap.py` |
 
 ## One-time setup
