@@ -114,3 +114,21 @@ def test_stderr_and_display_floods_are_muted(shell, capsys):
     run(shell, "for i in range(300):\n    display(i)\nk = 1\nwhile k <= 5:\n    pass\n")
     out = capsys.readouterr().out
     assert "Display output muted" in out and "Loop autopsy" in out
+
+
+def test_error_messages_are_never_muted(shell, capsys):
+    """Outside Jupyter, tracebacks are printed to sys.stdout: a muted flood of
+    print() must not swallow the error that ended the cell."""
+    run(shell, "%autopsy config max_output_lines=20")
+    capsys.readouterr()
+    error = shell.run_cell("for i in range(300):\n    print(i)\n1 / 0\n", store_history=True).error_in_exec
+    out = capsys.readouterr().out
+    assert isinstance(error, ZeroDivisionError)
+    assert out.count("Output muted") == 1 and "ZeroDivisionError" in out
+    code = "t = 0\nwhile t < 500:\n    t += 1\n    print(t)\n    if t == 400:\n        raise KeyboardInterrupt\n"
+    shell.run_cell(code, store_history=True)
+    out = capsys.readouterr().out
+    assert "Output muted" in out and "KeyboardInterrupt" in out and "you stopped this loop" in out
+    shell.run_cell("%autopsy summary all")
+    assert capsys.readouterr().out.count("output muted") == 2  # both cells are still marked
+    assert "showtraceback" not in vars(shell)  # the real method is back after each cell

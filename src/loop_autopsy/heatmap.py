@@ -332,6 +332,8 @@ class CellHealth:
         self._err_guard: Optional[OutputGuard] = None  # sys.stderr
         self._display_guard: Optional[DisplayGuard] = None  # display()
         self._clear_hook = None
+        self._traceback_hook = None
+        self._was_muted = False  # a guard muted output earlier in this cell
         self._saved_stdout = None
         self._saved_stderr = None
 
@@ -361,7 +363,9 @@ class CellHealth:
             self._guard = OutputGuard(sys.stdout, self.settings.max_output_lines)
             self._err_guard = OutputGuard(sys.stderr, self.settings.max_output_lines)
             sys.stdout, sys.stderr = self._guard, self._err_guard
+        self._was_muted = False
         self._guard_display()
+        self._guard_traceback()
 
     def post_run_cell(self, result=None) -> None:
         if self.depth == 0:
@@ -369,7 +373,7 @@ class CellHealth:
         self.depth -= 1
         if self.depth:
             return
-        muted = any(g is not None and g.muted for g in (self._guard, self._err_guard, self._display_guard))
+        muted = self._was_muted or self._any_muted()
         self._restore_stdout()
         elapsed = time.perf_counter() - self._t0
         rss, limit = current_rss(), memory_limit()
@@ -442,6 +446,26 @@ class CellHealth:
 
             self._clear_hook = pub.clear_output = clear_output
 
+    def _any_muted(self) -> bool:
+        return any(g is not None and g.muted for g in (self._guard, self._err_guard, self._display_guard))
+
+    def _guard_traceback(self) -> None:
+        """An error message must never be muted. In terminal IPython tracebacks
+        are printed to sys.stdout, so after a muted flood of ``print`` the error
+        that ended the cell would vanish. Unmute just before one is shown."""
+        original = getattr(self.shell, "showtraceback", None)
+        if original is None:
+            return
+
+        def showtraceback(*args: Any, **kwargs: Any) -> Any:
+            self._was_muted = self._was_muted or self._any_muted()
+            for guard in (self._guard, self._err_guard, self._display_guard):
+                if guard is not None:
+                    guard.reset()
+            return original(*args, **kwargs)
+
+        self._traceback_hook = self.shell.showtraceback = showtraceback
+
     def _restore_stdout(self) -> None:
         """Take every guard away again. Only undo what is still ours: something
         else may have replaced a stream in the meantime."""
@@ -454,6 +478,9 @@ class CellHealth:
             for name, ours in (("publish", self._display_guard), ("clear_output", self._clear_hook)):
                 if ours is not None and vars(pub).get(name) is ours:
                     delattr(pub, name)
+        if self._traceback_hook is not None and vars(self.shell).get("showtraceback") is self._traceback_hook:
+            del self.shell.showtraceback
+        self._traceback_hook = None
         for guard in (self._guard, self._err_guard, self._display_guard):
             if guard is not None:
                 guard.release()

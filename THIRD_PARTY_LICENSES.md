@@ -10,6 +10,7 @@ them separately, so each one stays under its own license.
 | [IPython](https://ipython.org) | **Required.** Runs the loop watcher (`dependencies` in `pyproject.toml`). | BSD-3-Clause |
 | [psutil](https://github.com/giampaolo/psutil) | **Optional.** `growth.py` uses it, only if installed, to read total RAM and the memory used by the kernel. Without it the code falls back to `/proc` and `resource`. | BSD-3-Clause |
 | [pytest](https://pytest.org) | **Development only.** Runs the tests (`[test]` extra in `pyproject.toml`). | MIT |
+| [pytest-cov](https://github.com/pytest-dev/pytest-cov) | **Development only.** Reports which lines the tests cover, in CI (`[test]` extra in `pyproject.toml`). | MIT |
 
 Licenses are as declared in each package's own metadata when this file was written.
 

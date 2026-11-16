@@ -103,14 +103,12 @@ Plus four extras:
   variables never changed.
 - **Cell health bar**: time, memory and loops for a cell, coloured green / yellow /
   red. It warns when memory passes 75% of your limit and names the biggest
-  variables (pandas and NumPy aware).
+  variables (pandas and NumPy aware); `%autopsy memory` shows the same list
+  whenever you ask.
 - **Output guard**: a cell's output is muted after 1,000 printed lines, so the
   browser stays responsive. This covers `print`, error output (`sys.stderr`) and,
   after 200 items, `display()` (tables, plots). Animations that clear the output
   and redraw are not muted, because `clear_output()` starts the count again.
-  variables (pandas and NumPy aware); `%autopsy memory` shows the same list
-  whenever you ask. It also mutes output after 1,000 printed
-  lines so the browser stays responsive.
 - **Session summary**: `%autopsy summary` shows every cell you have run as a strip
   of coloured squares, then a table of the heaviest cells with their time, memory
   and stopped loops. Here a cell is coloured only by what it did itself (its run
