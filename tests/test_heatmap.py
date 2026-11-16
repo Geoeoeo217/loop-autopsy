@@ -3,9 +3,9 @@ import io
 from types import SimpleNamespace
 
 from loop_autopsy.config import Settings
-from loop_autopsy.heatmap import (CellHealth, CellRecord, OutputGuard, build_bar, build_summary,
-                                  first_line, level_of, only_autopsy_commands, record_level,
-                                  should_show)
+from loop_autopsy.heatmap import (CellHealth, CellRecord, DisplayGuard, OutputGuard, build_bar,
+                                  build_summary, first_line, level_of, only_autopsy_commands,
+                                  record_level, should_show)
 
 GB = 1024 ** 3
 MB = 1024 ** 2
@@ -145,3 +145,103 @@ def test_history_limit_and_off(capsys):
     assert not health.records
     health.summary()
     assert "Cell history is off" in capsys.readouterr().out
+
+
+# --------------------------------------------------------------------------- wider output guard
+class FakePublisher:
+    """Stands in for ``shell.display_pub``."""
+
+    def __init__(self):
+        self.shown, self.cleared = [], 0
+
+    def publish(self, data=None, **kwargs):
+        self.shown.append(data)
+
+    def clear_output(self, wait=False):
+        self.cleared += 1
+
+
+def notices(pub):
+    return [d for d in pub.shown if "Display output muted" in str(d)]
+
+
+def test_output_guard_reset_and_release():
+    out = io.StringIO()
+    guard = OutputGuard(out, max_lines=2)
+    for i in range(5):
+        guard.write(f"a{i}\n")
+    assert guard.muted
+    guard.reset()  # the output area was cleared: count from zero again
+    guard.write("b0\n")
+    assert "b0" in out.getvalue() and not guard.muted
+    guard.release()  # the cell is over: a kept reference must never mute again
+    for i in range(10):
+        guard.write(f"c{i}\n")
+    assert "c9" in out.getvalue()
+
+
+def test_display_guard_mutes_after_limit():
+    pub = FakePublisher()
+    guard = DisplayGuard(pub.publish, max_items=3)
+    for i in range(10):
+        guard(data={"text/plain": f"item {i}"})
+    assert [d["text/plain"] for d in pub.shown[:3]] == ["item 0", "item 1", "item 2"]
+    assert len(pub.shown) == 4 and len(notices(pub)) == 1 and guard.muted
+
+
+def test_display_guard_lets_updates_and_reports_through():
+    pub = FakePublisher()
+    guard = DisplayGuard(pub.publish, max_items=2)
+    for i in range(5):
+        guard(data={"text/plain": "progress"}, update=True)  # replaces an output: never counted
+    assert len(pub.shown) == 5 and not guard.muted
+    for i in range(5):
+        guard(data={"text/plain": "flood"})
+    assert guard.muted
+    with guard.unguarded():
+        guard(data={"text/plain": "report"})
+    assert pub.shown[-1] == {"text/plain": "report"}
+    unlimited = DisplayGuard(pub.publish, max_items=0)
+    for i in range(500):
+        unlimited(data={"text/plain": "x"})
+    assert not unlimited.muted
+
+
+def test_stderr_is_guarded_and_restored(monkeypatch):
+    err = io.StringIO()
+    monkeypatch.setattr("sys.stderr", err)
+    health = CellHealth(None, Settings(max_output_lines=3), {"loops": 0, "stopped": 0})
+    health.pre_run_cell(SimpleNamespace(raw_cell="warn()", store_history=True))
+    import sys
+    kept = sys.stderr  # like a logging handler that stores the stream
+    for i in range(10):
+        print(f"warning {i}", file=sys.stderr)
+    health.post_run_cell(SimpleNamespace(execution_count=1, error_in_exec=None, error_before_exec=None))
+    assert sys.stderr is err
+    text = err.getvalue()
+    assert "warning 2" in text and "warning 3" not in text and text.count("Output muted") == 1
+    assert health.records[-1].muted
+    kept.write("later\n")  # the old guard passes everything through after the cell
+    assert "later" in err.getvalue()
+
+
+def test_display_is_guarded_and_restored():
+    pub = FakePublisher()
+    shell = SimpleNamespace(display_pub=pub)
+    health = CellHealth(shell, Settings(max_output_lines=0, max_displays=3), {"loops": 0, "stopped": 0})
+    health.pre_run_cell(SimpleNamespace(raw_cell="show()", store_history=True))
+    for i in range(10):
+        pub.publish(data={"text/plain": f"item {i}"})
+    assert len(pub.shown) == 4 and len(notices(pub)) == 1
+    pub.clear_output(wait=True)  # an animation clears and redraws: the count starts again
+    pub.publish(data={"text/plain": "after clear"})
+    assert pub.cleared == 1 and pub.shown[-1] == {"text/plain": "after clear"}
+    for i in range(10):
+        pub.publish(data={"text/plain": "more"})
+    health.post_run_cell(SimpleNamespace(execution_count=1, error_in_exec=None, error_before_exec=None))
+    assert "publish" not in vars(pub) and "clear_output" not in vars(pub)  # the real methods are back
+    assert health.records[-1].muted
+    before = len(pub.shown)
+    for i in range(10):
+        pub.publish(data={"text/plain": "next cell"})
+    assert len(pub.shown) == before + 10

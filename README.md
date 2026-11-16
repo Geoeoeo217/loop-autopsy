@@ -1,5 +1,7 @@
 # loop-autopsy
 
+[![tests](https://github.com/Geoeoeo217/loop-autopsy/actions/workflows/tests.yml/badge.svg)](https://github.com/Geoeoeo217/loop-autopsy/actions/workflows/tests.yml)
+
 **Stops runaway loops in Jupyter and shows the evidence for why they never ended.**
 
 ```python
@@ -95,15 +97,18 @@ case was never reached. It tells apart arguments that never change, arguments
 that go round in a circle, a value that jumped past 0, a value moving the wrong
 way, and a function that may be correct but needs more depth than Python allows.
 
-Plus three extras:
+Plus four extras:
 
 - **Press ■ yourself** and you still get the replay table, showing which
   variables never changed.
 - **Cell health bar**: time, memory and loops for a cell, coloured green / yellow /
   red. It warns when memory passes 75% of your limit and names the biggest
   variables (pandas and NumPy aware); `%autopsy memory` shows the same list
-  whenever you ask. It also mutes output after 1,000 printed
-  lines so the browser stays responsive.
+  whenever you ask.
+- **Output guard**: a cell's output is muted after 1,000 printed lines, so the
+  browser stays responsive. This covers `print`, error output (`sys.stderr`) and,
+  after 200 items, `display()` (tables, plots). Animations that clear the output
+  and redraw are not muted, because `clear_output()` starts the count again.
 - **Session summary**: `%autopsy summary` shows every cell you have run as a strip
   of coloured squares, then a table of the heaviest cells with their time, memory
   and stopped loops. Here a cell is coloured only by what it did itself (its run
@@ -175,7 +180,8 @@ Change any of these with `%autopsy config key=value` (for example `%autopsy conf
 | `growth_after` | 2000 | rounds before a growing list in a `for` loop is reported |
 | `memory_stop` | 0.85 | stop a loop when memory reaches this fraction of the limit |
 | `memory_warn` | 0.75 | health bar warning at this fraction of the limit |
-| `max_output_lines` | 1000 | printed lines per cell before output is muted (0 = off) |
+| `max_output_lines` | 1000 | printed lines per cell before output is muted, counted separately for normal and error output (0 = off) |
+| `max_displays` | 200 | `display()` calls per cell before they are muted (0 = off) |
 | `replay_rows` | 6 | rows in the replay table |
 | `max_watched` | 25 | variables watched per loop |
 | `heatmap` | `auto` | `on`, `off` or `auto` |
@@ -198,8 +204,10 @@ memory limit, then the computer's total RAM.
 - Loops that call your own functions or modules such as `random` cannot be proven
   stuck (those calls might change hidden state), so they rely on the time limit.
 - Only code typed in notebook cells is watched, not code inside imported modules.
-- Watching adds a small cost to each loop round (roughly 0.1–0.2 µs per round on
-  simple loops). Use `%%autopsy off` for heavy number crunching.
+- Watching adds a small cost to each loop round: roughly 0.1–0.3 µs, measured with
+  `benchmarks/overhead.py` on Python 3.12. That is invisible when a round does real
+  work, but a loop that does almost nothing per round (such as `i += 1`) runs
+  about 3 to 10 times slower. Use `%%autopsy off` for heavy number crunching.
 - A bare `except:` inside a loop can catch the stop signal, just as it catches ■.
 - Runaway recursion is explained only for functions typed in notebook cells, and
   only when the `RecursionError` reaches the top of the cell. A `RecursionError`
@@ -212,6 +220,15 @@ git clone https://github.com/Geoeoeo217/loop-autopsy
 cd loop-autopsy
 pip install -e ".[test]"
 pytest
+```
+
+The tests also run on GitHub for every push and pull request, on Python 3.9 to
+3.13 (Linux) and on Windows and macOS: see `.github/workflows/tests.yml`.
+
+To measure what watching costs per loop round on your own computer:
+
+```bash
+python benchmarks/overhead.py
 ```
 
 ## Team
