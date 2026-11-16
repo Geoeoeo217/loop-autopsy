@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from collections import deque
 from dataclasses import dataclass, field, fields
 from typing import Any, Optional, Tuple
@@ -100,10 +101,10 @@ class Settings:
             value: Any = raw.strip().strip("'\"").lower()
             if key == "heatmap" and value not in ("on", "off", "auto"):
                 raise ValueError("heatmap must be on, off or auto")
-        elif isinstance(current, int) and not isinstance(current, bool):
-            value = int(float(raw))
         else:
-            value = float(raw)
+            number = _number(key, raw)
+            is_int = isinstance(current, int) and not isinstance(current, bool)
+            value = int(number) if is_int else number
         if isinstance(value, (int, float)) and value < 0:
             raise ValueError(f"{key} cannot be negative")
         setattr(self, key, value)
@@ -111,3 +112,17 @@ class Settings:
 
     def as_dict(self) -> dict:
         return {f.name: getattr(self, f.name) for f in fields(self)}
+
+
+def _number(key: str, raw: str) -> float:
+    """Read a setting's number, with a message a beginner can act on."""
+    text = raw.strip()
+    if not text:
+        raise ValueError(f"no value given; write it as {key}=NUMBER")
+    try:
+        number = float(text)
+    except ValueError:
+        raise ValueError(f"{key} must be a number, not {text!r}") from None
+    if not math.isfinite(number):
+        raise ValueError(f"{key} must be a finite number, not {text!r}")
+    return number

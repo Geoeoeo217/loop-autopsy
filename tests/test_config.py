@@ -45,6 +45,27 @@ def test_bad_values_are_rejected_and_nothing_changes(key, raw):
     assert s.as_dict() == before
 
 
+@pytest.mark.parametrize("raw", ["inf", "-inf", "nan", "1e999"])
+def test_infinite_and_nan_values_are_rejected(raw):
+    s = Settings()
+    for key in ("time_limit", "replay_rows"):
+        with pytest.raises(ValueError, match="finite number"):
+            s.update(key, raw)
+    assert s.time_limit == 60.0 and s.replay_rows == 6
+
+
+def test_missing_value_says_how_to_write_it():
+    with pytest.raises(ValueError, match="time_limit=NUMBER"):
+        Settings().update("time_limit", "")
+
+
+def test_magic_reports_bad_values_without_a_traceback(shell, capsys):
+    shell.run_cell("%autopsy config replay_rows=inf time_limit")
+    out = capsys.readouterr().out
+    assert "Could not set 'replay_rows'" in out and "finite number" in out
+    assert "time_limit=NUMBER" in out and "Traceback" not in out
+
+
 def test_settings_are_independent():
     a, b = Settings(), Settings()
     a.update("time_limit", "5")
