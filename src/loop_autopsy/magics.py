@@ -4,12 +4,15 @@ from __future__ import annotations
 
 from IPython.core.magic import Magics, line_cell_magic, magics_class
 
+from . import growth
+
 HELP = """loop-autopsy commands
   %autopsy                  show status and settings
   %autopsy on | off         start / stop watching loops
   %autopsy last             show the last report again
   %autopsy heatmap on|off|auto   cell health bar (auto = only when worth seeing)
   %autopsy summary [all|clear]   every cell run this session, heaviest first
+  %autopsy memory [N]       memory in use and the N biggest variables (default 5)
   %autopsy config key=value ...  change a setting, e.g. %autopsy config time_limit=120
   %%autopsy off             (first line of a cell) run that cell without watching
 """
@@ -55,6 +58,13 @@ class AutopsyMagics(Magics):
                 print(err)
         elif command == "summary" and self.health is not None:
             self.health.summary(args[1].lower() if len(args) > 1 else "")
+        elif command == "memory":
+            try:
+                top = max(1, int(args[1])) if len(args) > 1 else 5
+            except ValueError:
+                print("Usage: %autopsy memory [number of variables to show]")
+                return None
+            print(growth.memory_overview(self.shell.user_ns, top))
         elif command == "config":
             if len(args) == 1:
                 print("Usage: %autopsy config key=value [key=value ...]")

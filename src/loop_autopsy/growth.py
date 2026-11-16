@@ -135,6 +135,37 @@ def largest_variables(namespace: Dict[str, Any], top: int = 3) -> List[Tuple[str
     return sizes[:top]
 
 
+def memory_overview(namespace: Dict[str, Any], top: int = 5) -> str:
+    """Plain-text answer for ``%autopsy memory``: total memory use and the biggest variables."""
+    rss, limit = current_rss(), memory_limit()
+    if rss and limit:
+        head = f"Memory: {format_bytes(rss)} of {format_bytes(limit)} ({rss / limit:.0%})"
+    elif rss:
+        head = f"Memory: {format_bytes(rss)} (limit unknown)"
+    else:
+        head = "Memory: cannot be measured on this system"
+
+    biggest = [(name, size) for name, size in largest_variables(namespace, top) if size > 0]
+    if not biggest:
+        return head + "\n\nNo variables to show yet."
+
+    rows = []
+    for name, size in biggest:
+        value = namespace[name]
+        kind = type(value).__name__
+        try:
+            kind += f" (len {len(value):,})"
+        except TypeError:
+            pass
+        rows.append((name, format_bytes(size), kind))
+    name_w = max(len("variable"), *(len(r[0]) for r in rows))
+    size_w = max(len("size"), *(len(r[1]) for r in rows))
+    lines = [head, "", f"{'variable':<{name_w}}  {'size':>{size_w}}  type",
+             f"{'-' * name_w}  {'-' * size_w}  ----"]
+    lines += [f"{n:<{name_w}}  {s:>{size_w}}  {k}" for n, s, k in rows]
+    return "\n".join(lines)
+
+
 def _lengths(values: Dict[str, Any]) -> Dict[str, int]:
     out = {}
     for name, value in values.items():

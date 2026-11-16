@@ -101,7 +101,8 @@ Plus three extras:
   variables never changed.
 - **Cell health bar**: time, memory and loops for a cell, coloured green / yellow /
   red. It warns when memory passes 75% of your limit and names the biggest
-  variables (pandas and NumPy aware). It also mutes output after 1,000 printed
+  variables (pandas and NumPy aware); `%autopsy memory` shows the same list
+  whenever you ask. It also mutes output after 1,000 printed
   lines so the browser stays responsive.
 - **Session summary**: `%autopsy summary` shows every cell you have run as a strip
   of coloured squares, then a table of the heaviest cells with their time, memory
@@ -151,6 +152,7 @@ c.InteractiveShellApp.extensions = ["loop_autopsy"]
 | `%autopsy heatmap on` / `off` / `auto` | cell health bar (`auto` = only when a cell is slow or memory-heavy) |
 | `%autopsy summary` | the 10 heaviest cells of this session, worst first |
 | `%autopsy summary all` / `clear` | every cell in run order / forget the history |
+| `%autopsy memory` / `%autopsy memory 10` | memory in use, and the 5 (or N) biggest variables with their sizes |
 | `%autopsy config time_limit=120` | change a setting (see Settings below) |
 | `%%autopsy off` | first line of a cell: run that cell without watching |
 | `%autopsy help` | help |
@@ -220,11 +222,12 @@ Built by a team of five for CS1302 (Introduction to Computer Programming).
 | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
 | NATHANAEL George Steindhart | project lead: loop rewriting (`transformer.py`), run-time glue (`monitor.py`), magics, packaging                             |
 | SETIAWAN Matthew Henson     | detection rules: stuck, cycle, wrong direction, jumped over, time limit (`detectors.py`), runaway recursion (`recursion.py`) |
-| LATHIF Muhammad Akmal       | memory and growing-list rules (`growth.py`)                                                                                  |
+| LATHIF Muhammad Akmal       | memory and growing-list rules, `%autopsy memory` (`growth.py`); license checks and third-party licenses (`tests/test_license.py`, `THIRD_PARTY_LICENSES.md`) |
 | KWAN Kendrick Matthew       | replay table and reports (`report.py`)                                                                                       |
 | HANDAYA Clement Steward     | cell health bar, session summary and output guard (`heatmap.py`)                                                             |
 
 
 ## License
 
-MIT
+MIT. The licenses of the packages loop-autopsy uses are listed in
+[THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
