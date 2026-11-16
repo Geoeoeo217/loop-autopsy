@@ -32,16 +32,26 @@ COMPARE_OPS = {ast.Lt: "<", ast.LtE: "<=", ast.Gt: ">", ast.GtE: ">=", ast.NotEq
 
 
 # --------------------------------------------------------------------------- analysis
+_SCOPES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)
+
+
+def _is_inserted_check(node: ast.AST) -> bool:
+    """The ``if __loop_autopsy__.due(ID): ...`` block added to an inner loop."""
+    return (isinstance(node, ast.If) and isinstance(node.test, ast.Call)
+            and isinstance(node.test.func, ast.Attribute)
+            and isinstance(node.test.func.value, ast.Name) and node.test.func.value.id == RUNTIME_NAME)
+
+
 def _walk_loop(nodes: Iterable[ast.AST]):
-    """Walk the given nodes but do not descend into nested function/class bodies."""
+    """Walk the given nodes, skipping nested function/class bodies (their names are not the
+    loop's variables) and the checks already inserted into inner loops."""
     queue = deque(nodes)  # breadth-first, so names come out in reading order
     while queue:
         node = queue.popleft()
+        if isinstance(node, _SCOPES) or _is_inserted_check(node):
+            continue
         yield node
-        for child in ast.iter_child_nodes(node):
-            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)):
-                continue
-            queue.append(child)
+        queue.extend(ast.iter_child_nodes(node))
 
 
 def names_in(nodes: Iterable[ast.AST]) -> List[str]:

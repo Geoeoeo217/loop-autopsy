@@ -95,6 +95,19 @@ def test_loop_inside_a_function_inside_a_loop_gets_its_own_id():
     assert "__loop_autopsy__.begin(0)" in code and "__loop_autopsy__.begin(1)" in code
 
 
+def test_outer_loop_does_not_watch_the_inserted_check():
+    infos, _ = transform("while a < 3:\n    while b < 2:\n        b += 1\n    a += 1\n")
+    outer = infos[1]
+    assert outer.watched == ("a", "b") and "locals" not in outer.watched
+
+
+def test_outer_loop_does_not_watch_names_inside_a_function_it_defines():
+    infos, _ = transform("for k in ks:\n    def f(n):\n        hidden = n * 2\n        return hidden\n    out = f(k)\n")
+    outer = infos[0]
+    assert "hidden" not in outer.watched and "n" not in outer.watched
+    assert outer.watched == ("ks", "out", "f", "k")
+
+
 def test_comprehensions_are_not_instrumented():
     infos, code = transform("x = [i for i in range(3)]\ny = {k: 1 for k in x}\n")
     assert infos == [] and "__loop_autopsy__" not in code
