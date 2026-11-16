@@ -19,8 +19,12 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest]
-        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
         include:
+          # Python 3.9 is past its end of life and is not built for the newest
+          # Ubuntu runner, so it is tested on the last Ubuntu that still has it.
+          - os: ubuntu-24.04
+            python-version: "3.9"
           - os: windows-latest
             python-version: "3.12"
           - os: macos-latest
