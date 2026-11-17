@@ -273,17 +273,35 @@ def _describe(value: Any) -> str:
     return kind
 
 
-def _history_lines(holders: List[Tuple[List[str], int, Any, List[str]]]) -> List[str]:
-    rows = [(" = ".join(labels), format_bytes(size), _describe(value),
-             ", ".join(f"`{u}`" for u in users) if users else "no variable")
-            for labels, size, value, users in holders]
-    widths = [max(len(head), *(len(r[i]) for r in rows))
-              for i, head in enumerate(("held by", "size", "type", "used by"))]
-    fmt = f"{{:<{widths[0]}}}  {{:>{widths[1]}}}  {{:<{widths[2]}}}  {{}}"
-    lines = ["Kept alive by the output history (Out, _, __, ___):", "",
-             fmt.format("held by", "size", "type", "used by"),
-             fmt.format(*("-" * w for w in widths[:3]), "-" * widths[3])]
-    lines += [fmt.format(*r) for r in rows]
+def _share(size: float, limit: float) -> str:
+    """``size`` as a share of the memory ``limit``: ``25.0%``, or ``<0.1%`` for a sliver."""
+    ratio = size / limit
+    return "<0.1%" if 0 < ratio < 0.001 else f"{ratio:.1%}"
+
+
+def _table(headers: List[str], rows: List[List[str]], right: Tuple[int, ...] = ()) -> List[str]:
+    """Plain-text table lines; the columns listed in ``right`` are right-aligned."""
+    widths = [max([len(head)] + [len(row[i]) for row in rows]) for i, head in enumerate(headers)]
+
+    def line(cells: List[str]) -> str:
+        parts = [cell.rjust(w) if i in right else cell.ljust(w) for i, (cell, w) in enumerate(zip(cells, widths))]
+        return "  ".join(parts).rstrip()
+
+    return [line(headers), line(["-" * w for w in widths])] + [line(row) for row in rows]
+
+
+def _history_lines(holders: List[Tuple[List[str], int, Any, List[str]]],
+                   limit: Optional[int] = None) -> List[str]:
+    headers = ["held by", "size"] + (["of limit"] if limit else []) + ["type", "used by"]
+    rows = []
+    for labels, size, value, users in holders:
+        row = [" = ".join(labels), format_bytes(size)]
+        if limit:
+            row.append(_share(size, limit))
+        row += [_describe(value), ", ".join(f"`{u}`" for u in users) if users else "no variable"]
+        rows.append(row)
+    lines = ["Kept alive by the output history (Out, _, __, ___):", ""]
+    lines += _table(headers, rows, right=(1, 2) if limit else (1,))
     lines += ["", "`del name` does not free an object the history still holds.",
               "`%reset -f out` clears the whole output history (Out, _, __, ___, _1, _2, ...);",
               "an object is freed once no variable uses it either."]
@@ -307,14 +325,16 @@ def memory_overview(namespace: Dict[str, Any], top: int = 5) -> str:
 
     lines = [head]
     if biggest:
-        rows = [(name, format_bytes(size), _describe(namespace[name])) for name, size in biggest]
-        name_w = max(len("variable"), *(len(r[0]) for r in rows))
-        size_w = max(len("size"), *(len(r[1]) for r in rows))
-        lines += ["", f"{'variable':<{name_w}}  {'size':>{size_w}}  type",
-                  f"{'-' * name_w}  {'-' * size_w}  ----"]
-        lines += [f"{n:<{name_w}}  {s:>{size_w}}  {k}" for n, s, k in rows]
+        headers = ["variable", "size"] + (["of limit"] if limit else []) + ["type"]
+        rows = []
+        for name, size in biggest:
+            row = [name, format_bytes(size)]
+            if limit:
+                row.append(_share(size, limit))
+            rows.append(row + [_describe(namespace[name])])
+        lines += [""] + _table(headers, rows, right=(1, 2) if limit else (1,))
     if holders:
-        lines += [""] + _history_lines(holders)
+        lines += [""] + _history_lines(holders, limit)
     return "\n".join(lines)
 
 
