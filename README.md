@@ -157,7 +157,7 @@ c.InteractiveShellApp.extensions = ["loop_autopsy"]
 | `%autopsy heatmap on` / `off` / `auto` | cell health bar (`auto` = only when a cell is slow or memory-heavy) |
 | `%autopsy summary` | the 10 heaviest cells of this session, worst first |
 | `%autopsy summary all` / `clear` | every cell in run order / forget the history |
-| `%autopsy memory` / `%autopsy memory 10` | memory in use, and the 5 (or N) biggest variables with their sizes |
+| `%autopsy memory` / `%autopsy memory 10` | memory in use, the 5 (or N) biggest variables with their sizes, and big results that the output history (`Out`, `_`) still keeps alive after you `del` the variable |
 | `%autopsy config time_limit=120` | change a setting (see Settings below) |
 | `%%autopsy off` | first line of a cell: run that cell without watching |
 | `%autopsy help` | help |

@@ -5,6 +5,11 @@ Version numbers follow [Semantic Versioning](https://semver.org/).
 
 ## Unreleased
 
+- `%autopsy memory` also lists big results that IPython's output history
+  (`Out`, `_`, `__`, `___`) still keeps alive. A variable that a cell displayed
+  stays in memory after `del`; the report names it, says whether a variable
+  still uses it, and points to `%reset -f out`, which frees it.
+
 - Fixed: the sizes in `%autopsy memory` and in the health bar's "biggest
   variables" now include what a variable holds. A list of lists was reported at
   about a fifth of its real size, and an object that holds a big list as a few
