@@ -5,6 +5,10 @@ Version numbers follow [Semantic Versioning](https://semver.org/).
 
 ## Unreleased
 
+- `MEM_LIMIT` may now be written with a unit, such as `2G` or `512M` (powers of
+  1024, like JupyterHub's `mem_limit`). Before, only a plain number of bytes
+  worked and `2G` was silently ignored.
+
 - `%autopsy memory` also lists big results that IPython's output history
   (`Out`, `_`, `__`, `___`) still keeps alive. A variable that a cell displayed
   stays in memory after `del`; the report names it, says whether a variable
