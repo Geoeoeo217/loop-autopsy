@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import os
 import sys
+from collections import deque
+from itertools import islice
 from typing import Any, Dict, List, Optional, Tuple
 
 from .config import Finding, LoopInfo, LoopState, Settings
@@ -98,26 +100,95 @@ def memory_fraction() -> Optional[float]:
 
 
 # --------------------------------------------------------------------------- sizes
+# How many items of a container are measured, by nesting depth, and how deep to look.
+# The mean size of the measured items is multiplied by the container's length, so a
+# huge nested structure is estimated in milliseconds instead of being walked in full.
+_SAMPLE_BY_DEPTH = (1000, 50, 10, 3)
+_VISIT_BUDGET = 60_000  # most items looked at by one size_of call
+_LEAF = (bool, int, float, complex, str, bytes, range, type(None))  # nothing inside to add up
+
+
 def size_of(value: Any) -> int:
-    """Approximate bytes used by ``value`` (pandas / NumPy aware)."""
+    """Approximate bytes used by ``value`` (pandas / NumPy aware).
+
+    Lists, tuples, sets, dicts and deques are measured including what they hold, also
+    when nested (a list of lists). The attributes of an ordinary object (``__dict__``
+    and ``__slots__``) count too, so a class instance that holds a big list is not
+    reported as a few dozen bytes. It is an estimate: only the first few items of a
+    big container are measured, and an object shared by several items is counted
+    once per item.
+    """
     try:
-        if hasattr(value, "memory_usage") and callable(value.memory_usage):  # pandas
-            usage = value.memory_usage(deep=True)
-            return int(usage.sum() if hasattr(usage, "sum") else usage)
-        if hasattr(value, "nbytes") and isinstance(getattr(value, "nbytes"), int):  # NumPy
-            return int(value.nbytes)
-        base = sys.getsizeof(value)
-        if isinstance(value, (list, tuple, set, frozenset)) and value:
-            sample = list(value)[:1000] if not isinstance(value, (list, tuple)) else value[:1000]
-            per_item = sum(sys.getsizeof(x) for x in sample) / len(sample)
-            return int(base + per_item * len(value))
-        if isinstance(value, dict) and value:
-            items = list(value.items())[:1000]
-            per_item = sum(sys.getsizeof(k) + sys.getsizeof(v) for k, v in items) / len(items)
-            return int(base + per_item * len(value))
-        return base
+        return int(_deep_size(value, 0, [_VISIT_BUDGET]))
     except Exception:
         return 0
+
+
+def _slot_values(value: Any) -> List[Any]:
+    """Values stored in the ``__slots__`` of ``value``'s class (and its parents)."""
+    found: List[Any] = []
+    for cls in type(value).__mro__:
+        names = cls.__dict__.get("__slots__", ())
+        for name in (names,) if isinstance(names, str) else names:
+            if name in ("__dict__", "__weakref__"):
+                continue
+            try:
+                found.append(object.__getattribute__(value, name))
+            except AttributeError:  # slot never assigned
+                pass
+    return found
+
+
+def _deep_size(value: Any, depth: int, budget: List[int]) -> float:
+    import types
+
+    if hasattr(value, "memory_usage") and callable(value.memory_usage):  # pandas
+        usage = value.memory_usage(deep=True)
+        return usage.sum() if hasattr(usage, "sum") else usage
+    if hasattr(value, "nbytes") and isinstance(getattr(value, "nbytes"), int):  # NumPy
+        return value.nbytes
+    base = sys.getsizeof(value)
+    budget[0] -= 1
+    if budget[0] < 0 or depth >= len(_SAMPLE_BY_DEPTH):
+        return base  # nested too deep, or already looked at enough: count this one shallowly
+    if isinstance(value, _LEAF) or isinstance(
+            value, (types.ModuleType, type, types.FunctionType, types.BuiltinFunctionType, types.MethodType)):
+        return base
+
+    if isinstance(value, (list, tuple, set, frozenset, deque)) and value:
+        sample = islice(value, _SAMPLE_BY_DEPTH[depth])
+        return base + _mean_size(sample, depth, budget) * len(value)
+    if isinstance(value, dict) and value:
+        pairs = islice(value.items(), _SAMPLE_BY_DEPTH[depth])
+        return base + _mean_size(pairs, depth, budget, pairs=True) * len(value)
+
+    inner = getattr(value, "__dict__", None)
+    if isinstance(inner, dict) and inner:
+        base += _child_size(inner, depth + 1, budget)
+    for item in _slot_values(value):
+        base += _child_size(item, depth + 1, budget)
+    return base
+
+
+def _child_size(item: Any, depth: int, budget: List[int]) -> float:
+    try:
+        return _deep_size(item, depth, budget)
+    except Exception:  # one odd item must not hide the size of everything around it
+        return 0.0
+
+
+def _mean_size(items, depth: int, budget: List[int], pairs: bool = False) -> float:
+    """Average size of the sampled ``items`` (or of ``(key, value)`` pairs)."""
+    total, count = 0.0, 0
+    for item in items:
+        if pairs:
+            total += _child_size(item[0], depth + 1, budget) + _child_size(item[1], depth + 1, budget)
+        else:
+            total += _child_size(item, depth + 1, budget)
+        count += 1
+        if budget[0] <= 0:
+            break
+    return total / count if count else 0.0
 
 
 def largest_variables(namespace: Dict[str, Any], top: int = 3) -> List[Tuple[str, int]]:

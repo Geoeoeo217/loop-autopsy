@@ -329,3 +329,105 @@ def test_memory_rule_measures_memory_itself_when_not_told(monkeypatch):
     assert growth.check_memory(state.info, state, {}, Settings()) is None
     monkeypatch.setattr(growth, "memory_fraction", lambda: 0.9)
     assert growth.check_memory(state.info, state, {}, Settings()).kind == "memory"
+
+
+# --------------------------------------------------------------------------- size_of: nested values and objects
+def test_size_of_follows_nested_containers():
+    outer = [[0] * 100 for _ in range(100)]
+    one_inner = sys.getsizeof(outer[0]) + sys.getsizeof(0) * 100
+    assert growth.size_of(outer) == sys.getsizeof(outer) + one_inner * 100
+    # the same list inside a dict and a tuple
+    assert growth.size_of({"rows": outer}) > growth.size_of(outer)
+    assert growth.size_of((outer,)) > growth.size_of(outer)
+
+
+def test_size_of_counts_what_an_object_holds():
+    class Model:
+        def __init__(self):
+            self.weights = [float(i) for i in range(50_000)]
+
+    class Slotted:
+        __slots__ = ("weights", "name", "unused")
+
+        def __init__(self):
+            self.weights = [float(i) for i in range(50_000)]
+            self.name = "slotted"
+
+    class Plain:
+        def __init__(self):
+            self.count = 3
+
+    model, slotted = Model(), Slotted()
+    assert growth.size_of(model) > growth.size_of(model.weights)  # list plus the instance itself
+    assert growth.size_of(slotted) > growth.size_of(slotted.weights)  # the unset slot is skipped
+    assert growth.size_of(Plain()) >= sys.getsizeof(Plain())  # nothing big inside, nothing invented
+
+
+def test_size_of_object_with_a_huge_list_is_not_tiny():
+    class Holder:
+        def __init__(self):
+            self.items = list(range(1000, 301_000))
+
+    holder = Holder()
+    assert sys.getsizeof(holder) < 100
+    assert growth.size_of(holder) > 300_000 * sys.getsizeof(1000)
+
+
+def test_size_of_stops_at_references_to_itself():
+    loop: list = []
+    loop.append(loop)
+
+    class Node:
+        pass
+
+    node = Node()
+    node.me = node
+    node.pair = [node, {"again": node}]
+    assert growth.size_of(loop) > 0
+    assert growth.size_of(node) > 0
+
+
+def test_size_of_does_not_walk_modules_functions_or_classes():
+    holder = {"os": os, "len": len, "cls": int, "method": [].append}
+    assert growth.size_of(holder) < 2_000
+
+
+def test_size_of_counts_deques_and_big_sets():
+    import collections
+
+    d = collections.deque(range(1000, 3000))
+    assert growth.size_of(d) > sys.getsizeof(d)
+    assert growth.size_of(set(range(1000, 301_000))) > 300_000 * sys.getsizeof(1000)
+
+
+def test_size_of_looks_at_a_limited_number_of_items(monkeypatch):
+    calls = []
+
+    def counting(obj, *default):
+        calls.append(1)
+        return 64
+
+    # growth only needs ``getsizeof`` (and ``platform``) from sys, so swap sys inside growth alone
+    monkeypatch.setattr(growth, "sys", types.SimpleNamespace(getsizeof=counting, platform=sys.platform))
+    monkeypatch.setattr(growth, "_VISIT_BUDGET", 500)
+    cube = [[[0] * 30 for _ in range(30)] for _ in range(30)]  # 27,000 numbers inside
+    assert growth.size_of(cube) > 0
+    assert len(calls) <= 500 + 5
+
+
+def test_size_of_one_odd_item_does_not_hide_the_rest():
+    class Odd:
+        def memory_usage(self, deep=False):
+            raise RuntimeError("no size for you")
+
+    sizes = growth.size_of([1000, 2000, Odd(), 3000])
+    assert sizes > sys.getsizeof([1000, 2000, 3000])
+
+
+def test_largest_variables_ranks_an_object_by_what_it_holds():
+    class Model:
+        def __init__(self):
+            self.weights = [float(i) for i in range(200_000)]
+
+    ns = {"small": [1, 2, 3], "model": Model(), "nested": [[0] * 10 for _ in range(10)]}
+    assert [n for n, _ in growth.largest_variables(ns, top=3)] == ["model", "nested", "small"]

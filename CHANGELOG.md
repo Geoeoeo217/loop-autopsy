@@ -5,6 +5,12 @@ Version numbers follow [Semantic Versioning](https://semver.org/).
 
 ## Unreleased
 
+- Fixed: the sizes in `%autopsy memory` and in the health bar's "biggest
+  variables" now include what a variable holds. A list of lists was reported at
+  about a fifth of its real size, and an object that holds a big list as a few
+  dozen bytes, so the variable using the most memory could be missing from the
+  table.
+
 - Fixed: for a condition that compares two variables, such as `while lo < hi`,
   the "wrong direction" and "jumped over" reports now name the variable that
   actually moved (or both). They used to blame the left one even when it never
