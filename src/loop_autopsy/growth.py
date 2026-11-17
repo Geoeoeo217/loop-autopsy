@@ -6,6 +6,7 @@ No third-party dependency is required; psutil is used only if installed.
 from __future__ import annotations
 
 import os
+import re
 import sys
 from collections import deque
 from itertools import islice
@@ -38,6 +39,29 @@ def _read_int(path: str) -> Optional[int]:
         return None
 
 
+_SIZE = re.compile(r"(\d+(?:\.\d+)?)\s*(?:([KMGT])(?:i?B)?|B)?", re.IGNORECASE)
+_SIZE_UNITS = {"K": 1024, "M": 1024 ** 2, "G": 1024 ** 3, "T": 1024 ** 4}
+
+
+def parse_memory_size(text: Any) -> Optional[int]:
+    """Bytes in a size such as ``"2147483648"``, ``"1.5e9"``, ``"512M"`` or ``"2 GiB"``.
+
+    The suffixes K, M, G and T are powers of 1024, the same as JupyterHub's own
+    ``mem_limit`` setting. Returns ``None`` when the text is not a size, or is negative.
+    """
+    if isinstance(text, bool):
+        return None
+    try:
+        number = int(float(text))
+        return number if number >= 0 else None
+    except (TypeError, ValueError, OverflowError):
+        pass
+    match = _SIZE.fullmatch(str(text).strip())
+    if not match:
+        return None
+    return int(float(match.group(1)) * _SIZE_UNITS.get((match.group(2) or "").upper(), 1))
+
+
 def memory_limit(refresh: bool = False) -> Optional[int]:
     """Bytes this kernel may use: MEM_LIMIT -> cgroup v2 -> cgroup v1 -> physical RAM."""
     if _limit_cache and not refresh:
@@ -45,10 +69,7 @@ def memory_limit(refresh: bool = False) -> Optional[int]:
     limit: Optional[int] = None
     env = os.environ.get("MEM_LIMIT")
     if env:
-        try:
-            limit = int(float(env))
-        except ValueError:
-            limit = None
+        limit = parse_memory_size(env)
     if limit is None:
         for path in ("/sys/fs/cgroup/memory.max", "/sys/fs/cgroup/memory/memory.limit_in_bytes"):
             value = _read_int(path)
