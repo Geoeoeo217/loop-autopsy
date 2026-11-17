@@ -142,3 +142,58 @@ def test_deleted_variable_is_still_held_until_the_history_is_reset(shell, capsys
     capsys.readouterr()
     run("%autopsy memory")
     assert "output history" not in capsys.readouterr().out
+
+
+# --------------------------------------------------------------------------- share of the limit
+MIB = 1024 ** 2
+
+
+def test_share_formats_a_fraction_of_the_limit():
+    gb = 1024 ** 3
+    assert growth._share(gb // 4, gb) == "25.0%"
+    assert growth._share(gb, gb) == "100.0%"
+    assert growth._share(2 * gb, gb) == "200.0%"  # an estimate can exceed the limit
+    assert growth._share(0, gb) == "0.0%"
+    assert growth._share(1, gb) == "<0.1%"
+    assert growth._share(1000, 10 ** 6) == "0.1%"  # exactly 0.1% is shown as it is
+    assert growth._share(gb // 500, gb) == "0.2%"
+
+
+def test_table_aligns_columns_and_adds_no_trailing_spaces():
+    lines = growth._table(["name", "size", "type"], [["a", "1 KB", "list"], ["long name", "12 MB", "dict"]],
+                          right=(1,))
+    assert lines == ["name        size  type",
+                     "---------  -----  ----",
+                     "a           1 KB  list",
+                     "long name  12 MB  dict"]
+    # the last column is never padded, so no line ends in spaces
+    assert all(line == line.rstrip() for line in growth._table(["a", "b"], [["x", "much longer"]]))
+
+
+def test_variable_table_shows_each_variables_share_of_the_limit(monkeypatch):
+    _fix_memory(monkeypatch, 300 * MIB, 2 * 1024 ** 3)
+    sizes = {"big": 512 * MIB, "small": 28}
+    monkeypatch.setattr(growth, "size_of", lambda value: sizes[value[0]])
+    text = growth.memory_overview({"big": ["big"], "small": ["small"]})
+    header = next(line for line in text.splitlines() if line.startswith("variable"))
+    assert header.split() == ["variable", "size", "of", "limit", "type"]
+    assert "25.0%" in next(line for line in text.splitlines() if line.startswith("big"))
+    assert "<0.1%" in next(line for line in text.splitlines() if line.startswith("small"))
+
+
+def test_no_share_column_when_the_limit_is_unknown(monkeypatch):
+    _fix_memory(monkeypatch, 300 * MIB, None)
+    text = growth.memory_overview({"a": list(range(1000, 2000))})
+    assert "of limit" not in text and "%" not in text
+
+
+def test_history_table_shows_the_share_of_the_limit_too(monkeypatch):
+    _fix_memory(monkeypatch, 300 * MIB, 2 * 1024 ** 3)
+    big = ["big"]
+    monkeypatch.setattr(growth, "size_of", lambda value: 512 * MIB if value is big else 28)
+    text = growth.memory_overview({"Out": {5: big}, "_5": big})
+    line = next(line for line in text.splitlines() if line.startswith("Out[5]"))
+    assert "512.0 MB" in line and "25.0%" in line and "no variable" in line
+    assert "of limit" in text
+    _fix_memory(monkeypatch, 300 * MIB, None)
+    assert "of limit" not in growth.memory_overview({"Out": {5: big}, "_5": big})
