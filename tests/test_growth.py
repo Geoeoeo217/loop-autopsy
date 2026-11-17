@@ -431,3 +431,44 @@ def test_largest_variables_ranks_an_object_by_what_it_holds():
 
     ns = {"small": [1, 2, 3], "model": Model(), "nested": [[0] * 10 for _ in range(10)]}
     assert [n for n, _ in growth.largest_variables(ns, top=3)] == ["model", "nested", "small"]
+
+
+# --------------------------------------------------------------------------- MEM_LIMIT with units
+@pytest.mark.parametrize("text, expected", [
+    ("2147483648", 2 * GB),
+    ("1.5e9", 1_500_000_000),
+    ("0", 0),
+    ("64K", 64 * 1024),
+    ("512M", 512 * 1024 ** 2),
+    ("2G", 2 * GB),
+    ("1.5G", 3 * GB // 2),
+    ("1T", 1024 * GB),
+    ("2g", 2 * GB),  # not case sensitive
+    ("2 GB", 2 * GB),
+    ("2GiB", 2 * GB),
+    ("  12 MiB ", 12 * 1024 ** 2),
+    ("5B", 5),
+])
+def test_parse_memory_size_understands_numbers_and_units(text, expected):
+    assert growth.parse_memory_size(text) == expected
+
+
+@pytest.mark.parametrize("text", ["", "   ", "abc", "G", "2X", "two gigabytes", "-5", "-1G", "inf", "nan",
+                                  "1e400", "2G extra", None, True])
+def test_parse_memory_size_refuses_anything_else(text):
+    assert growth.parse_memory_size(text) is None
+
+
+def test_parse_memory_size_takes_numbers_too():
+    assert growth.parse_memory_size(4096) == 4096
+    assert growth.parse_memory_size(2.5e9) == 2_500_000_000
+
+
+def test_memory_limit_reads_a_size_with_a_unit(monkeypatch, fresh_limit):
+    monkeypatch.setattr(growth, "_read_int", lambda path: 3 * GB)
+    monkeypatch.setenv("MEM_LIMIT", "2G")
+    assert growth.memory_limit(refresh=True) == 2 * GB
+    monkeypatch.setenv("MEM_LIMIT", "512M")
+    assert growth.memory_limit(refresh=True) == 512 * 1024 ** 2
+    monkeypatch.setenv("MEM_LIMIT", "-1G")  # nonsense: fall through to the container limit
+    assert growth.memory_limit(refresh=True) == 3 * GB
