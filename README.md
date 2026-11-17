@@ -193,8 +193,8 @@ Change any of these with `%autopsy config key=value` (for example `%autopsy conf
 The summary also uses `time_yellow` / `time_red` for a cell's run time. Its history
 lives in memory only and is gone when the kernel restarts.
 
-The memory limit is read from JupyterHub's `MEM_LIMIT` setting, then the container's
-memory limit, then the computer's total RAM.
+The memory limit is read from JupyterHub's `MEM_LIMIT` setting (a number of bytes, or a
+size such as `2G` or `512M`), then the container's memory limit, then the computer's total RAM.
 
 ## Limitations 
 
