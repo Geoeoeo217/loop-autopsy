@@ -206,6 +206,69 @@ def largest_variables(namespace: Dict[str, Any], top: int = 3) -> List[Tuple[str
     return sizes[:top]
 
 
+_HISTORY_MIN = 1 << 20  # outputs smaller than 1 MB are not worth mentioning
+
+
+def output_history_holders(namespace: Dict[str, Any], top: int = 3,
+                           min_bytes: int = _HISTORY_MIN) -> List[Tuple[List[str], int, Any, List[str]]]:
+    """Big objects that IPython's output history keeps alive, biggest first.
+
+    ``Out[3]``, ``_3`` and ``_`` / ``__`` / ``___`` all refer to what a cell displayed, so
+    ``del big`` does not free ``big`` if a cell showed it as its result. Each item is
+    ``(history names, size in bytes, the object, variables that still use it)``.
+    """
+    held: Dict[int, Tuple[List[str], Any]] = {}
+
+    def add(label: str, value: Any) -> None:
+        if value is not None:
+            held.setdefault(id(value), ([], value))[0].append(label)
+
+    out = namespace.get("Out")
+    if isinstance(out, dict):
+        for number, value in list(out.items()):
+            add(f"Out[{number}]", value)
+    for name, value in list(namespace.items()):
+        if name in ("_", "__", "___") or (name.startswith("_") and name[1:].isdigit()):
+            add(name, value)
+
+    found = []
+    for labels, value in held.values():
+        size = size_of(value)
+        if size >= min_bytes:
+            users = [n for n, v in list(namespace.items())
+                     if v is value and not n.startswith("_") and n not in ("In", "Out")]
+            found.append((labels, size, value, users))
+    found.sort(key=lambda item: item[1], reverse=True)
+    return found[:top]
+
+
+def _describe(value: Any) -> str:
+    """Type name, with the length when the value has one: ``list (len 3)``."""
+    kind = type(value).__name__
+    try:
+        kind += f" (len {len(value):,})"
+    except TypeError:
+        pass
+    return kind
+
+
+def _history_lines(holders: List[Tuple[List[str], int, Any, List[str]]]) -> List[str]:
+    rows = [(" = ".join(labels), format_bytes(size), _describe(value),
+             ", ".join(f"`{u}`" for u in users) if users else "no variable")
+            for labels, size, value, users in holders]
+    widths = [max(len(head), *(len(r[i]) for r in rows))
+              for i, head in enumerate(("held by", "size", "type", "used by"))]
+    fmt = f"{{:<{widths[0]}}}  {{:>{widths[1]}}}  {{:<{widths[2]}}}  {{}}"
+    lines = ["Kept alive by the output history (Out, _, __, ___):", "",
+             fmt.format("held by", "size", "type", "used by"),
+             fmt.format(*("-" * w for w in widths[:3]), "-" * widths[3])]
+    lines += [fmt.format(*r) for r in rows]
+    lines += ["", "`del name` does not free an object the history still holds.",
+              "`%reset -f out` clears the whole output history (Out, _, __, ___, _1, _2, ...);",
+              "an object is freed once no variable uses it either."]
+    return lines
+
+
 def memory_overview(namespace: Dict[str, Any], top: int = 5) -> str:
     """Plain-text answer for ``%autopsy memory``: total memory use and the biggest variables."""
     rss, limit = current_rss(), memory_limit()
@@ -217,23 +280,20 @@ def memory_overview(namespace: Dict[str, Any], top: int = 5) -> str:
         head = "Memory: cannot be measured on this system"
 
     biggest = [(name, size) for name, size in largest_variables(namespace, top) if size > 0]
-    if not biggest:
+    holders = output_history_holders(namespace)
+    if not biggest and not holders:
         return head + "\n\nNo variables to show yet."
 
-    rows = []
-    for name, size in biggest:
-        value = namespace[name]
-        kind = type(value).__name__
-        try:
-            kind += f" (len {len(value):,})"
-        except TypeError:
-            pass
-        rows.append((name, format_bytes(size), kind))
-    name_w = max(len("variable"), *(len(r[0]) for r in rows))
-    size_w = max(len("size"), *(len(r[1]) for r in rows))
-    lines = [head, "", f"{'variable':<{name_w}}  {'size':>{size_w}}  type",
-             f"{'-' * name_w}  {'-' * size_w}  ----"]
-    lines += [f"{n:<{name_w}}  {s:>{size_w}}  {k}" for n, s, k in rows]
+    lines = [head]
+    if biggest:
+        rows = [(name, format_bytes(size), _describe(namespace[name])) for name, size in biggest]
+        name_w = max(len("variable"), *(len(r[0]) for r in rows))
+        size_w = max(len("size"), *(len(r[1]) for r in rows))
+        lines += ["", f"{'variable':<{name_w}}  {'size':>{size_w}}  type",
+                  f"{'-' * name_w}  {'-' * size_w}  ----"]
+        lines += [f"{n:<{name_w}}  {s:>{size_w}}  {k}" for n, s, k in rows]
+    if holders:
+        lines += [""] + _history_lines(holders)
     return "\n".join(lines)
 
 
