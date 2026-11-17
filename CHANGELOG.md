@@ -5,6 +5,9 @@ Version numbers follow [Semantic Versioning](https://semver.org/).
 
 ## Unreleased
 
+- `%autopsy memory` shows each variable's share of the memory limit in an
+  "of limit" column (left out when the limit is unknown).
+
 - `MEM_LIMIT` may now be written with a unit, such as `2G` or `512M` (powers of
   1024, like JupyterHub's `mem_limit`). Before, only a plain number of bytes
   worked and `2G` was silently ignored.
