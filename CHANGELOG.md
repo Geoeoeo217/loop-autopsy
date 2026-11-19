@@ -5,6 +5,12 @@ Version numbers follow [Semantic Versioning](https://semver.org/).
 
 ## Unreleased
 
+- Output guard: the last 20 muted lines are shown when the cell ends, or just
+  before its error message. New setting `muted_tail` (0 = off).
+- Health bar and session summary: a cell that adds memory every time it is
+  re-run (two re-runs in a row, 10 MB or more each) gets a note explaining
+  why. New setting `rerun_growth_mb` (0 = off).
+
 - `%autopsy memory` shows each variable's share of the memory limit in an
   "of limit" column (left out when the limit is unknown).
 

@@ -5,7 +5,7 @@ from types import SimpleNamespace
 from loop_autopsy.config import Settings
 from loop_autopsy.heatmap import (CellHealth, CellRecord, DisplayGuard, OutputGuard, build_bar,
                                   build_summary, first_line, level_of, only_autopsy_commands,
-                                  record_level, should_show)
+                                  record_level, rerun_growth, should_show)
 
 GB = 1024 ** 3
 MB = 1024 ** 2
@@ -33,6 +33,70 @@ def test_output_guard_mutes_after_limit():
     text = out.getvalue()
     assert "line 2" in text and "line 3" not in text
     assert text.count("Output muted") == 1 and guard.muted
+
+
+def test_output_guard_shows_the_last_muted_lines():
+    out = io.StringIO()
+    guard = OutputGuard(out, max_lines=3, tail_lines=4)
+    guard.write("line 0\nline 1\nline 2\nline 3\nline 4\n")  # crosses the limit mid-write
+    for i in range(5, 50):
+        guard.write(f"line {i}\n")
+    guard.write("no newline yet")
+    assert "line 49" not in out.getvalue()  # nothing extra while the cell runs
+    guard.flush_tail()
+    text = out.getvalue()
+    assert "48 lines were muted. The last 4:" in text
+    assert text.endswith("line 47\nline 48\nline 49\nno newline yet\n")
+    assert "line 46" not in text and "line 3\n" not in text
+    guard.flush_tail()  # shown once only
+    assert out.getvalue() == text
+
+
+def test_output_guard_tail_when_few_lines_were_muted():
+    out = io.StringIO()
+    guard = OutputGuard(out, max_lines=2, tail_lines=20)
+    for i in range(3):
+        guard.write(f"x{i}\n")
+    guard.flush_tail()
+    assert "The muted line:\nx2\n" in out.getvalue()
+
+
+def test_output_guard_tail_off_and_cleared_by_reset():
+    out = io.StringIO()
+    guard = OutputGuard(out, max_lines=1, tail_lines=0)
+    for i in range(10):
+        guard.write(f"y{i}\n")
+    guard.flush_tail()
+    assert "muted. The last" not in out.getvalue() and "y9" not in out.getvalue()
+    out = io.StringIO()
+    guard = OutputGuard(out, max_lines=1, tail_lines=5)
+    for i in range(10):
+        guard.write(f"old{i}\n")
+    guard.reset()  # the output area was cleared: old muted lines are not wanted
+    guard.flush_tail()
+    assert "old9" not in out.getvalue()
+
+
+def test_output_guard_caps_an_endless_line():
+    guard = OutputGuard(io.StringIO(), max_lines=1, tail_lines=5)
+    guard.write("first\n")
+    for _ in range(10_000):
+        guard.write("." * 10)  # print(end="") forever: no newline ever comes
+    assert len(guard._partial) <= OutputGuard.MAX_PARTIAL
+
+
+def test_tail_is_shown_when_the_cell_ends(monkeypatch):
+    out = io.StringIO()
+    monkeypatch.setattr("sys.stdout", out)
+    health = CellHealth(None, Settings(max_output_lines=5, muted_tail=3, heatmap="off"),
+                        {"loops": 0, "stopped": 0})
+    health.pre_run_cell(SimpleNamespace(raw_cell="flood()", store_history=True))
+    for i in range(100):
+        print(f"value {i}")
+    health.post_run_cell(SimpleNamespace(execution_count=1, error_in_exec=None, error_before_exec=None))
+    text = out.getvalue()
+    assert "95 lines were muted. The last 3:\nvalue 97\nvalue 98\nvalue 99\n" in text
+    assert "value 96" not in text
 
 
 def test_output_guard_unlimited():
@@ -114,6 +178,49 @@ def test_summary_top_ten_and_all():
 def test_summary_escapes_cell_source():
     html, _ = build_summary([make_record(1, source="print('<b>hi</b>')")], Settings())
     assert "<b>hi</b>" not in html and "&lt;b&gt;" in html
+
+
+def test_rerun_growth_needs_two_growing_reruns_in_a_row():
+    def runs(*deltas, key=7):
+        return [make_record(n, delta=d, key=key) for n, d in enumerate(deltas, 1)]
+
+    assert rerun_growth(runs(500 * MB, 0, 0), 7, 10 * MB) is None  # loading data once is normal
+    assert rerun_growth(runs(500 * MB, 50 * MB), 7, 10 * MB) is None  # one re-run is not enough
+    assert rerun_growth(runs(0, 40 * MB, 60 * MB), 7, 10 * MB) == (2, 50 * MB)
+    assert rerun_growth(runs(0, 40 * MB, 1 * MB, 20 * MB, 20 * MB, 20 * MB), 7, 10 * MB) == (3, 20 * MB)
+    assert rerun_growth(runs(0, 40 * MB, 60 * MB, None), 7, 10 * MB) is None  # memory unknown
+    assert rerun_growth(runs(0, 40 * MB, 60 * MB), 8, 10 * MB) is None  # another cell
+    assert rerun_growth(runs(0, 40 * MB, 60 * MB), None, 10 * MB) is None
+    assert rerun_growth(runs(0, 40 * MB, 60 * MB), 7, 0) is None  # setting is 0: off
+
+
+def test_rerun_growth_in_bar_and_summary():
+    settings = Settings()
+    level, html, text = build_bar(0.1, 200 * MB, GB, 30 * MB, 0, 0, settings, rerun=(2, 30 * MB))
+    assert level == 0 and "the last 2 times this cell ran again" in text and "30.0 MB" in text
+    assert "pd.concat" in html and "restart the kernel" in html
+    assert should_show("auto", 0, 30 * MB, rerun=True) and not should_show("off", 0, 0, rerun=True)
+
+    records = [make_record(1, delta=0, key=1, source="df = pd.concat([df, new])"),
+               make_record(2, delta=0, key=2),
+               make_record(3, delta=30 * MB, key=1, source="df = pd.concat([df, new])"),
+               make_record(4, delta=30 * MB, key=1, source="df = pd.concat([df, new])")]
+    _, text = build_summary(records, settings, show_all=True)
+    noted = [line for line in text.splitlines() if "each re-run" in line]
+    assert len(noted) == 1 and noted[0].startswith("[4]") and "+30.0 MB each re-run" in noted[0]
+
+
+def test_rerun_growth_is_warned_after_the_cell(monkeypatch):
+    shown = []
+    health = CellHealth(None, Settings(max_output_lines=0), {"loops": 0, "stopped": 0},
+                        show=lambda text, html: shown.append(text))
+    rss = iter([100 * MB, 100 * MB, 100 * MB, 150 * MB, 150 * MB, 200 * MB])
+    monkeypatch.setattr("loop_autopsy.heatmap.current_rss", lambda: next(rss))
+    monkeypatch.setattr("loop_autopsy.heatmap.memory_limit", lambda: 8 * GB)
+    code = "data = data + [0] * 10_000_000"
+    for n in (1, 2, 3):
+        run_fake_cell(health, n, code)
+    assert len(shown) == 1 and "the last 2 times this cell ran again" in shown[0]
 
 
 def test_cells_are_remembered():
@@ -219,7 +326,9 @@ def test_stderr_is_guarded_and_restored(monkeypatch):
     health.post_run_cell(SimpleNamespace(execution_count=1, error_in_exec=None, error_before_exec=None))
     assert sys.stderr is err
     text = err.getvalue()
-    assert "warning 2" in text and "warning 3" not in text and text.count("Output muted") == 1
+    before, tail = text.split("[loop-autopsy] The muted lines:")  # the tail comes at the end
+    assert "warning 2" in before and "warning 3" not in before and before.count("Output muted") == 1
+    assert tail.strip().splitlines() == [f"warning {i}" for i in range(3, 10)]
     assert health.records[-1].muted
     kept.write("later\n")  # the old guard passes everything through after the cell
     assert "later" in err.getvalue()

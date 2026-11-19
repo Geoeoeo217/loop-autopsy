@@ -27,25 +27,38 @@ LABELS = ("healthy", "watch out", "heavy")
 BIG_GROWTH = 100 * 1024 * 1024  # 100 MB
 SOURCE_WIDTH = 40  # characters of a cell's first line kept for the summary
 TOP_CELLS = 10  # rows in the "worst cells" table
+RERUNS_NEEDED = 2  # re-runs in a row that must each add memory before a cell is flagged
+MB = 1024 * 1024
 _ONLY_AUTOPSY = re.compile(r"\s*%autopsy\b")  # a line that is just our own line magic
 
 
 # --------------------------------------------------------------------------- output guard
 class OutputGuard:
-    """Wraps sys.stdout or sys.stderr and mutes it after ``max_lines`` printed lines."""
+    """Wraps sys.stdout or sys.stderr and mutes it after ``max_lines`` printed lines.
+
+    The last ``tail_lines`` muted lines are kept, because the end of a flood is
+    usually what matters (the final result, or the values just before an error).
+    ``flush_tail`` shows them when the cell ends or an error is about to be shown.
+    """
 
     NOTICE = ("\n[loop-autopsy] Output muted after {n:,} lines to keep your browser responsive. "
               "The cell is still running; a stuck loop will still be stopped.\n")
+    MAX_PARTIAL = 2000  # characters kept of a muted line that has not ended yet
 
-    def __init__(self, stream, max_lines: int):
+    def __init__(self, stream, max_lines: int, tail_lines: int = 0):
         self._stream = stream
         self.raw_stream = stream  # reports write here so they are never muted
         self.max_lines = max_lines
         self.lines = 0
         self.muted = False
+        self.tail_lines = tail_lines
+        self.hidden = 0  # complete lines muted since the last flush
+        self._tail: Deque[str] = deque(maxlen=tail_lines)
+        self._partial = ""  # a muted line still being written (no newline yet)
 
     def write(self, text: str) -> int:
         if self.muted:
+            self._hide(text)
             return len(text)
         newlines = text.count("\n")
         if self.max_lines and self.lines + newlines >= self.max_lines:
@@ -57,13 +70,40 @@ class OutputGuard:
             self._stream.write(self.NOTICE.format(n=self.max_lines))
             self.lines = self.max_lines
             self.muted = True
+            self._hide(text[cut:])
             return len(text)
         self.lines += newlines
         return self._stream.write(text)
 
+    def _hide(self, text: str) -> None:
+        """Remember the end of muted output for ``flush_tail``."""
+        if not self.tail_lines or not text:
+            return
+        parts = (self._partial + text).split("\n")
+        self._partial = parts.pop()[-self.MAX_PARTIAL:]
+        self.hidden += len(parts)
+        self._tail.extend(parts)
+
+    def flush_tail(self) -> None:
+        """Show the last muted lines, once, under a short notice."""
+        shown = (list(self._tail) + ([self._partial] if self._partial else []))[-self.tail_lines:]
+        hidden = self.hidden + (1 if self._partial else 0)
+        self._tail.clear()
+        self._partial, self.hidden = "", 0
+        if not shown:
+            return
+        if hidden > len(shown):
+            notice = f"[loop-autopsy] {hidden:,} lines were muted. The last {len(shown)}:"
+        else:
+            notice = f"[loop-autopsy] The muted line{'s' if len(shown) != 1 else ''}:"
+        self._stream.write("\n" + notice + "\n" + "\n".join(shown) + "\n")
+
     def reset(self) -> None:
-        """Start counting again (the output area was cleared)."""
+        """Start counting again (the output area was cleared, so the muted
+        lines from before are no longer wanted either)."""
         self.lines, self.muted = 0, False
+        self._tail.clear()
+        self._partial, self.hidden = "", 0
 
     def release(self) -> None:
         """The cell is over: pass everything through from now on. Code that kept
@@ -127,8 +167,13 @@ def level_of(value: float, yellow: float, red: float) -> int:
 
 def build_bar(elapsed: float, rss: Optional[int], limit: Optional[int], delta: Optional[int],
               loops: int, stopped: int, settings: Settings,
-              biggest: Optional[List[Tuple[str, int]]] = None) -> Tuple[int, str, str]:
-    """Return (level, html, text) for one cell. Pure function: easy to test."""
+              biggest: Optional[List[Tuple[str, int]]] = None,
+              rerun: Optional[Tuple[int, int]] = None) -> Tuple[int, str, str]:
+    """Return (level, html, text) for one cell. Pure function: easy to test.
+
+    ``rerun`` is ``(re-runs, average bytes added)`` from ``rerun_growth``, when
+    this cell keeps adding memory every time it is run again.
+    """
     frac = (rss / limit) if rss and limit else None
     level = level_of(elapsed, settings.time_yellow, settings.time_red)
     if frac is not None:
@@ -155,6 +200,17 @@ def build_bar(elapsed: float, rss: Optional[int], limit: Optional[int], delta: O
         warn_html = (f"<div style='color:{COLORS[2]};margin-top:3px'><b>Warning:</b> memory is at {frac:.0%} of "
                      f"your limit.{' Biggest variables: ' + listed + '.' if listed else ''} "
                      f"Delete what you no longer need with <code>del name</code>.</div>")
+    if rerun is not None:
+        times, added = rerun
+        warn_text += (f"\nNote: the last {times} times this cell ran again, it added about "
+                      f"{format_bytes(added)} more each time. Running it again adds to what is "
+                      f"already there (for example df = pd.concat([df, new]) or items.append(...)). "
+                      f"Re-run the cell that creates the variable first, or restart the kernel.")
+        warn_html += (f"<div style='color:{COLORS[1]};margin-top:3px'><b>Note:</b> the last {times} times "
+                      f"this cell ran again, it added about {format_bytes(added)} more each time. "
+                      f"Running it again adds to what is already there (for example "
+                      f"<code>df = pd.concat([df, new])</code> or <code>items.append(...)</code>). "
+                      f"Re-run the cell that creates the variable first, or restart the kernel.</div>")
 
     fill = min(100, int((frac or 0) * 100))
     html_text = (
@@ -167,14 +223,15 @@ def build_bar(elapsed: float, rss: Optional[int], limit: Optional[int], delta: O
     return level, html_text, text + warn_text
 
 
-def should_show(mode: str, level: int, delta: Optional[int]) -> bool:
-    """``auto`` shows the bar only when the cell was slow, memory is high or grew a lot.
+def should_show(mode: str, level: int, delta: Optional[int], rerun: bool = False) -> bool:
+    """``auto`` shows the bar only when the cell was slow, memory is high or grew a
+    lot, or the cell keeps adding memory each time it is re-run.
     (A stopped loop already shows its own report, so it does not trigger the bar.)"""
     if mode == "on":
         return True
     if mode == "off":
         return False
-    return level > 0 or (delta is not None and delta >= BIG_GROWTH)
+    return level > 0 or rerun or (delta is not None and delta >= BIG_GROWTH)
 
 
 # --------------------------------------------------------------------------- session summary
@@ -192,6 +249,34 @@ class CellRecord:
     stopped: int = 0
     outcome: str = "ok"  # ok | error | interrupted
     muted: bool = False  # the output guard cut this cell's output
+    key: Optional[int] = None  # same code = same key, so re-runs of a cell can be found
+
+
+def cell_key(raw_cell: str) -> int:
+    """Identifies a cell's code within this session (re-running it gives the same key)."""
+    return hash(raw_cell.strip())
+
+
+def rerun_growth(records: Iterable[CellRecord], key: Optional[int],
+                 min_bytes: int) -> Optional[Tuple[int, int]]:
+    """Does the cell with ``key`` keep adding memory each time it is run again?
+
+    The first run may add memory (loading data is normal). But when each of the
+    latest ``RERUNS_NEEDED`` or more re-runs added at least ``min_bytes`` too,
+    the cell is piling data on top of itself, as ``df = pd.concat([df, new])``
+    does. Returns ``(re-runs in that streak, average bytes they added)`` or None.
+    """
+    if key is None or min_bytes <= 0:
+        return None
+    reruns = [r.delta for r in records if r.key == key][1:]
+    streak: List[int] = []
+    for delta in reversed(reruns):
+        if delta is None or delta < min_bytes:
+            break
+        streak.append(delta)
+    if len(streak) < RERUNS_NEEDED:
+        return None
+    return len(streak), sum(streak) // len(streak)
 
 
 def first_line(raw_cell: str, width: int = SOURCE_WIDTH) -> str:
@@ -228,7 +313,7 @@ def _delta_text(delta: Optional[int]) -> str:
     return ("+" if delta >= 0 else "-") + format_bytes(abs(delta))
 
 
-def _notes(record: CellRecord) -> str:
+def _notes(record: CellRecord, rerun: Optional[Tuple[int, int]] = None) -> str:
     notes = []
     if record.stopped:
         notes.append(f"{record.stopped} stopped")
@@ -236,6 +321,8 @@ def _notes(record: CellRecord) -> str:
         notes.append(record.outcome)
     if record.muted:
         notes.append("output muted")
+    if rerun is not None:
+        notes.append(f"+{format_bytes(rerun[1])} each re-run")
     return ", ".join(notes)
 
 
@@ -254,6 +341,9 @@ def build_summary(records: Iterable[CellRecord], settings: Settings, show_all: b
     records = list(records)
     levels = [record_level(r, settings) for r in records]
     counts = [levels.count(i) for i in range(3)]
+    # A cell that grows on every re-run gets a note on its latest run only.
+    latest = {r.key: i for i, r in enumerate(records) if r.key is not None}
+    reruns = {i: rerun_growth(records, key, settings.rerun_growth_mb * MB) for key, i in latest.items()}
 
     totals = [f"{len(records)} cell{'s' if len(records) != 1 else ''} run",
               ", ".join(f"{counts[i]} {LABELS[i]}" for i in range(3)),
@@ -274,7 +364,7 @@ def build_summary(records: Iterable[CellRecord], settings: Settings, show_all: b
 
     head = ["cell", "health", "time", "memory", "total after", "loops", "notes", "first line"]
     rows = [[_cell_label(r), LABELS[levels[i]], f"{r.elapsed:.2f} s", _delta_text(r.delta),
-             format_bytes(r.rss), str(r.loops), _notes(r), r.source]
+             format_bytes(r.rss), str(r.loops), _notes(r, reruns.get(i)), r.source]
             for i, r in ((i, records[i]) for i in order)]
 
     # -- text
@@ -360,8 +450,9 @@ class CellHealth:
         self._rss0 = current_rss()
         if self.settings.max_output_lines:
             self._saved_stdout, self._saved_stderr = sys.stdout, sys.stderr
-            self._guard = OutputGuard(sys.stdout, self.settings.max_output_lines)
-            self._err_guard = OutputGuard(sys.stderr, self.settings.max_output_lines)
+            limit, tail = self.settings.max_output_lines, self.settings.muted_tail
+            self._guard = OutputGuard(sys.stdout, limit, tail)
+            self._err_guard = OutputGuard(sys.stderr, limit, tail)
             sys.stdout, sys.stderr = self._guard, self._err_guard
         self._was_muted = False
         self._guard_display()
@@ -378,22 +469,25 @@ class CellHealth:
         elapsed = time.perf_counter() - self._t0
         rss, limit = current_rss(), memory_limit()
         delta = (rss - self._rss0) if (rss is not None and self._rss0 is not None) else None
-        self._remember(result, elapsed, delta, rss, limit, muted)
+        record = self._remember(result, elapsed, delta, rss, limit, muted)
+        rerun = None
+        if record is not None:
+            rerun = rerun_growth(self.records, record.key, self.settings.rerun_growth_mb * MB)
         frac = (rss / limit) if rss and limit else 0
         biggest = largest_variables(self.shell.user_ns) if frac >= self.settings.memory_warn else None
         level, html_text, text = build_bar(elapsed, rss, limit, delta, self.stats.get("loops", 0),
-                                           self.stats.get("stopped", 0), self.settings, biggest)
-        if should_show(self.settings.heatmap, level, delta) and self.show:
+                                           self.stats.get("stopped", 0), self.settings, biggest, rerun)
+        if should_show(self.settings.heatmap, level, delta, rerun is not None) and self.show:
             self.show(text, html_text)
 
     # ------------------------------------------------------------------ session summary
     def _remember(self, result, elapsed: float, delta: Optional[int], rss: Optional[int],
-                  limit: Optional[int], muted: bool) -> None:
-        """Add the cell that just finished to the session history."""
+                  limit: Optional[int], muted: bool) -> Optional[CellRecord]:
+        """Add the cell that just finished to the session history and return it."""
         keep = self.settings.history_cells
         # Only cells with a visible [number] count: frontends also run hidden helper code.
         if keep <= 0 or not self._numbered or only_autopsy_commands(self._raw_cell):
-            return
+            return None
         if self.records.maxlen != keep:  # the setting was changed: keep the newest cells
             self.records = deque(self.records, maxlen=keep)
         error = getattr(result, "error_in_exec", None) or getattr(result, "error_before_exec", None)
@@ -402,11 +496,14 @@ class CellHealth:
             outcome = "interrupted"
         elif error is not None and not self.stats.get("stopped", 0):
             outcome = "error"  # a stopped loop is already counted in ``stopped``
-        self.records.append(CellRecord(
+        record = CellRecord(
             number=getattr(result, "execution_count", None), source=first_line(self._raw_cell),
             elapsed=elapsed, delta=delta, rss=rss, limit=limit, loops=self.stats.get("loops", 0),
             stopped=self.stats.get("stopped", 0), outcome=outcome, muted=muted,
-        ))
+            key=cell_key(self._raw_cell),
+        )
+        self.records.append(record)
+        return record
 
     def summary(self, mode: str = "") -> None:
         """``%autopsy summary [all|clear]``."""
@@ -452,13 +549,15 @@ class CellHealth:
     def _guard_traceback(self) -> None:
         """An error message must never be muted. In terminal IPython tracebacks
         are printed to sys.stdout, so after a muted flood of ``print`` the error
-        that ended the cell would vanish. Unmute just before one is shown."""
+        that ended the cell would vanish. Unmute just before one is shown, after
+        the last muted lines, which show the values just before the error."""
         original = getattr(self.shell, "showtraceback", None)
         if original is None:
             return
 
         def showtraceback(*args: Any, **kwargs: Any) -> Any:
             self._was_muted = self._was_muted or self._any_muted()
+            self._flush_tails()
             for guard in (self._guard, self._err_guard, self._display_guard):
                 if guard is not None:
                     guard.reset()
@@ -466,9 +565,15 @@ class CellHealth:
 
         self._traceback_hook = self.shell.showtraceback = showtraceback
 
+    def _flush_tails(self) -> None:
+        for guard in (self._guard, self._err_guard):
+            if guard is not None:
+                guard.flush_tail()
+
     def _restore_stdout(self) -> None:
         """Take every guard away again. Only undo what is still ours: something
         else may have replaced a stream in the meantime."""
+        self._flush_tails()
         if self._guard is not None and sys.stdout is self._guard:
             sys.stdout = self._saved_stdout
         if self._err_guard is not None and sys.stderr is self._err_guard:

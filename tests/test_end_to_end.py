@@ -103,7 +103,10 @@ def test_stderr_and_display_floods_are_muted(shell, capsys):
     capsys.readouterr()
     assert run(shell, "import sys\nfor i in range(300):\n    print('warn', i, file=sys.stderr)\n") is None
     err = capsys.readouterr().err
-    assert "warn 19" in err and "warn 20" not in err and err.count("Output muted") == 1
+    assert "warn 19" in err and "warn 20\n" not in err and err.count("Output muted") == 1
+    # The end of the flood is shown once the cell is over.
+    assert "280 lines were muted. The last 20:" in err and err.rstrip().endswith("warn 299")
+    assert "warn 279\n" not in err
     assert run(shell, "from IPython.display import display\nfor i in range(300):\n    display(i)\n") is None
     out = capsys.readouterr().out
     assert out.count("Display output muted after 5 items") == 1 and "299" not in out
@@ -125,6 +128,8 @@ def test_error_messages_are_never_muted(shell, capsys):
     out = capsys.readouterr().out
     assert isinstance(error, ZeroDivisionError)
     assert out.count("Output muted") == 1 and "ZeroDivisionError" in out
+    # The last values printed come just before the error, not after it.
+    assert out.index("299\n") < out.index("ZeroDivisionError")
     code = "t = 0\nwhile t < 500:\n    t += 1\n    print(t)\n    if t == 400:\n        raise KeyboardInterrupt\n"
     shell.run_cell(code, store_history=True)
     out = capsys.readouterr().out

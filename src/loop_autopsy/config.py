@@ -80,6 +80,7 @@ class Settings:
     memory_warn: float = 0.75
     max_output_lines: int = 1000
     max_displays: int = 200  # display() calls per cell before they are muted (0 = off)
+    muted_tail: int = 20  # last muted lines shown when the cell ends (0 = none)
     replay_rows: int = 6
     max_watched: int = 25
     heatmap: str = "auto"  # on | off | auto
@@ -90,6 +91,7 @@ class Settings:
     history_cells: int = 200  # cells remembered for %autopsy summary (0 = off)
     grow_yellow: float = 0.05  # summary colours: memory one cell added, as a fraction of the limit
     grow_red: float = 0.20
+    rerun_growth_mb: int = 10  # MB a cell must add on each re-run to be flagged (0 = off)
 
     def update(self, key: str, raw: str) -> Any:
         """Set ``key`` from a string such as ``"30"``; returns the new value."""

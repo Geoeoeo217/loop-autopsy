@@ -104,11 +104,15 @@ Plus four extras:
 - **Cell health bar**: time, memory and loops for a cell, coloured green / yellow /
   red. It warns when memory passes 75% of your limit and names the biggest
   variables (pandas and NumPy aware); `%autopsy memory` shows the same list
-  whenever you ask.
+  whenever you ask. It also notices a cell that adds memory **every time you
+  re-run it** (such as `df = pd.concat([df, new])`): after two such re-runs in a
+  row, each adding 10 MB or more, it explains why and what to do.
 - **Output guard**: a cell's output is muted after 1,000 printed lines, so the
   browser stays responsive. This covers `print`, error output (`sys.stderr`) and,
-  after 200 items, `display()` (tables, plots). Animations that clear the output
-  and redraw are not muted, because `clear_output()` starts the count again.
+  after 200 items, `display()` (tables, plots). The last 20 muted lines are shown
+  when the cell ends (or just before its error message), because the end of the
+  output is usually the part you need. Animations that clear the output and
+  redraw are not muted, because `clear_output()` starts the count again.
 - **Session summary**: `%autopsy summary` shows every cell you have run as a strip
   of coloured squares, then a table of the heaviest cells with their time, memory
   and stopped loops. Here a cell is coloured only by what it did itself (its run
@@ -182,6 +186,7 @@ Change any of these with `%autopsy config key=value` (for example `%autopsy conf
 | `memory_warn` | 0.75 | health bar warning at this fraction of the limit |
 | `max_output_lines` | 1000 | printed lines per cell before output is muted, counted separately for normal and error output (0 = off) |
 | `max_displays` | 200 | `display()` calls per cell before they are muted (0 = off) |
+| `muted_tail` | 20 | last muted lines shown when the cell ends (0 = none) |
 | `replay_rows` | 6 | rows in the replay table |
 | `max_watched` | 25 | variables watched per loop |
 | `heatmap` | `auto` | `on`, `off` or `auto` |
@@ -189,9 +194,11 @@ Change any of these with `%autopsy config key=value` (for example `%autopsy conf
 | `mem_yellow` / `mem_red` | 0.50 / 0.80 | memory fraction for a yellow / red health bar |
 | `history_cells` | 200 | cells remembered for `%autopsy summary` (0 = off) |
 | `grow_yellow` / `grow_red` | 0.05 / 0.20 | summary: memory one cell added, as a fraction of the limit, for a yellow / red square |
+| `rerun_growth_mb` | 10 | MB a cell must add on each of two re-runs in a row to be flagged as growing on every re-run (0 = off) |
 
 The summary also uses `time_yellow` / `time_red` for a cell's run time. Its history
-lives in memory only and is gone when the kernel restarts.
+lives in memory only and is gone when the kernel restarts. Spotting a cell that
+grows on every re-run uses this history too, so it is off when `history_cells=0`.
 
 The memory limit is read from JupyterHub's `MEM_LIMIT` setting (a number of bytes, or a
 size such as `2G` or `512M`), then the container's memory limit, then the computer's total RAM.
