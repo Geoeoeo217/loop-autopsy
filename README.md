@@ -257,6 +257,10 @@ among them by default. Use `%memparts batch 2` to show two. Each row measures
 one value using the same estimator as `%autopsy memory`. Shared values can
 appear more than once, and container overhead is excluded from the rows.
 
+### Preview a growing-list loop
+
+Use [the optional `%%growthcheck` command](docs/growth-check.md) to locate direct list updates inside a `for` loop before running the cell.
+
 ## Settings
 
 Change any of these with `%autopsy config key=value` (for example `%autopsy config time_limit=120`).
@@ -341,6 +345,7 @@ python benchmarks/overhead.py
 
 The modules in `loop_autopsy/extras/` are optional add-ons, not part of the core:
 
+- [`growth_trace`](docs/growth-trace.md): locate notebook lines with growing live allocations after a loop
 - `report_theme`: light/dark themes for the HTML report
 - `report_i18n`: multi-language report labels (en, id, zh)
 - `report_export`: export reports to text or HTML files
