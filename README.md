@@ -233,6 +233,30 @@ by the notebook's output history.
 | `%growthdiff show 3` | Show the three largest changes. Use any positive integer. |
 | `%growthdiff clear` | Discard the checkpoint. |
 
+### Inspect a variable's memory use
+
+Load the optional memory inspection commands once per notebook:
+
+```python
+%load_ext loop_autopsy.memory_inspect
+batch = {"metadata": "train", "pixels": bytearray(8192)}
+preview = batch
+%memaliases batch
+%memparts batch
+```
+
+**`%memaliases NAME`** lists visible notebook names pointing to that exact object.
+In the example, both `batch` and `preview` appear. If an output in IPython's
+`Out` cache holds the object directly, its cell number appears too. References
+inside containers and shared buffers between separate objects are outside the scan.
+
+**`%memparts NAME [N]`** ranks the immediate values in a built-in dict, list or
+tuple by estimated size. In the example, `batch['pixels']` ranks first.
+It inspects the first 64 entries in iteration order and shows the largest five
+among them by default. Use `%memparts batch 2` to show two. Each row measures
+one value using the same estimator as `%autopsy memory`. Shared values can
+appear more than once, and container overhead is excluded from the rows.
+
 ## Settings
 
 Change any of these with `%autopsy config key=value` (for example `%autopsy config time_limit=120`).
