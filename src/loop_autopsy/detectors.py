@@ -7,6 +7,7 @@ Private bookkeeping lives in ``state.scratch``.
 
 from __future__ import annotations
 
+import math
 from collections import deque
 from decimal import Decimal
 from fractions import Fraction
@@ -304,6 +305,64 @@ def _other_side(side, value) -> str:
     return _show(value) if side[0] == "const" else f"`{side[1]}` ({_show(value)})"
 
 
+# --------------------------------------------------------------------------- R8
+ESTIMATE_MARGIN = 2.0  # stop early only when the estimate is at least this many times the time limit
+
+
+def duration(seconds: float) -> str:
+    """``45 s``, ``12 min``, ``3.5 hours`` or ``4 days``: how long a wait feels."""
+    if seconds < 90:
+        return f"{seconds:.0f} s"
+    if seconds < 90 * 60:
+        return f"{seconds / 60:.0f} min"
+    if seconds < 48 * 3600:
+        return f"{seconds / 3600:.1f} hours"
+    return f"{seconds / 86400:,.0f} days"
+
+
+def _progress(state: LoopState) -> Optional[tuple]:
+    """``(rounds finished, total rounds, "12.5%")`` for a for loop of known length."""
+    total, done = state.total, state.rounds - 1  # the current round has only just started
+    if not total or done < 1 or state.rounds > total:  # more rounds than items: the iterable grew
+        return None
+    share = done / total
+    return done, total, (f"{share:.1%}" if share >= 0.001 else "less than 0.1%")
+
+
+def check_estimate(info: LoopInfo, state: LoopState, settings: Settings, now: float) -> Optional[Finding]:
+    """R8: a for loop that, at its current speed, needs far longer than the time limit.
+
+    It would be stopped by the time limit anyway, so it is stopped as soon as
+    that is clear, with an estimate instead of a minute of waiting. Loops that
+    can end early (a ``break``, ``return`` or ``raise``) are left to the time
+    limit: a search loop may well finish long before its last item.
+    """
+    if (info.kind != "for" or info.exits or info.waits_for_user
+            or settings.time_limit <= 0 or settings.estimate_after <= 0):
+        return None
+    elapsed = now - state.started
+    if elapsed < settings.estimate_after or elapsed >= settings.time_limit:
+        return None
+    progress = _progress(state)
+    if progress is None:
+        return None
+    done, total, share = progress
+    needed = elapsed * total / done
+    if needed < ESTIMATE_MARGIN * settings.time_limit:
+        return None
+    allow = int(math.ceil(needed * 1.25 / 60) * 60)
+    return Finding(
+        "too_slow", "loop would take too long",
+        f"After {elapsed:.0f} s this loop has finished {done:,} of its {total:,} rounds ({share}). "
+        f"At this speed it needs about {duration(needed)} in total, far more than the "
+        f"{settings.time_limit:.0f} s time limit, so it was stopped now instead of after "
+        f"{settings.time_limit:.0f} s. Nothing is wrong with the loop itself: it is just slow.",
+        "Try it on a small part of the data first (for example the first 1,000 items) and check the result, "
+        "or make each round do less work. To let it run to the end: "
+        f"`%autopsy config time_limit={allow}`, or start the cell with `%%autopsy off`.",
+    )
+
+
 # --------------------------------------------------------------------------- R7
 def check_time(info: LoopInfo, state: LoopState, settings: Settings, now: float) -> Optional[Finding]:
     """R7: honest fallback when nothing could be proven."""
@@ -318,10 +377,18 @@ def check_time(info: LoopInfo, state: LoopState, settings: Settings, now: float)
         reason = " (it calls functions whose effects loop-autopsy cannot check)"
     elif info.kind == "while" and off:
         reason = " (it uses values loop-autopsy cannot look inside)"
+    extra = ""
+    progress = _progress(state)
+    if progress is not None:
+        done, total, share = progress
+        extra = (f" It had finished {done:,} of its {total:,} rounds ({share}); at this speed all of them "
+                 f"would take about {duration(elapsed * total / done)}.")
+    elif info.always_true and not info.exits:
+        extra = " It also has no `break`, `return` or `raise`, so it could not end on its own."
     return Finding(
         "time_limit", "loop ran too long",
         f"This loop has been running for {elapsed:.0f} s ({state.rounds:,} rounds). loop-autopsy could not prove "
-        f"that it is stuck{reason}. It might just be slow, or stuck in a way the rules cannot see.",
+        f"that it is stuck{reason}. It might just be slow, or stuck in a way the rules cannot see.{extra}",
         "Use the replay table to see whether the values move towards the stop condition. "
         f"To allow longer loops: `%autopsy config time_limit={int(settings.time_limit * 5)}`.",
     )

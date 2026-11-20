@@ -15,7 +15,7 @@ from .config import Finding, LoopState
 
 _IMMUTABLE = (type(None), bool, int, float, complex, str, bytes, Fraction, Decimal, range)
 ACCENT = {"stuck": "#d9480f", "cycle": "#d9480f", "wrong_direction": "#d9480f", "jumped_over": "#d9480f",
-          "growing_iterable": "#c2255c", "memory": "#c2255c", "time_limit": "#e67700", "interrupt": "#1971c2",
+          "growing_iterable": "#c2255c", "memory": "#c2255c", "time_limit": "#e67700", "too_slow": "#e67700", "interrupt": "#1971c2",
           "recursion": "#7048e8", "recursion_stuck": "#7048e8", "recursion_cycle": "#7048e8",
           "recursion_past_base": "#7048e8", "recursion_wrong_way": "#7048e8", "recursion_too_deep": "#7048e8"}
 _MISSING = object()

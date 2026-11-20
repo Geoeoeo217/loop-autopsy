@@ -86,8 +86,19 @@ Every rule and its numbers are listed below, and every number can be changed (se
 | **Jumped over** the stop value | `while x != 1.0: x += 0.1` | about 100 checks |
 | **Growing list** in a `for` loop | `for n in nums: nums.append(n)` | 2,000 rounds |
 | **Memory** about to run out | a loop filling a huge list | at 85% of the limit |
+| **Would take too long**: a `for` loop over something with a length, too slow to finish in time | `for row in range(10**9): slow(row)` | 5 s, if it needs at least twice the time limit |
 | **Too long** (fallback) | anything else | 60 s |
 | **Runaway recursion** | `def f(n): return f(n - 2)` | when Python raises `RecursionError` |
+
+A `for` loop that "would take too long" is stopped with an estimate ("finished
+1,234 of 10,000,000 rounds; at this speed it needs about 11 hours") instead of a
+minute of waiting, because the time limit would stop it anyway. This only
+happens when the loop has no `break`, `return` or `raise`: a search that may end
+early is given the full time limit. A loop stopped by the time limit also shows
+how far it got, when its length is known.
+
+A `while True:` loop with no `break`, `return`, `raise` or `exit()` inside gets
+a one-line note as soon as it starts, because it can only end with an error.
 
 Runaway recursion is the recursive cousin of an infinite loop. Python already
 stops it, but with a traceback hundreds of lines long. loop-autopsy replaces that
@@ -179,6 +190,7 @@ Change any of these with `%autopsy config key=value` (for example `%autopsy conf
 | Setting | Default | Meaning |
 |---|---|---|
 | `time_limit` | 60 | seconds before a loop that cannot be proven stuck is stopped (0 = never) |
+| `estimate_after` | 5 | seconds before a `for` loop's total time is estimated, to stop it early if it needs at least twice `time_limit` (0 = never) |
 | `direction_after` | 500 | checks in a row moving away from the stop value before "wrong direction" |
 | `jump_after` | 100 | checks in a row after jumping over a `!=` stop value |
 | `growth_after` | 2000 | rounds before a growing list in a `for` loop is reported |

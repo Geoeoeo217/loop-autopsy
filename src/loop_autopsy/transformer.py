@@ -114,6 +114,48 @@ def classify_calls(nodes: Iterable[ast.AST], watched: Set[str]) -> Tuple[bool, b
     return repeat_safe, waits
 
 
+_EXIT_FUNCS = frozenset({"exit", "quit"})  # exit() / quit() in a notebook
+_EXIT_METHODS = frozenset({("sys", "exit"), ("os", "_exit")})
+_LOOPS = (ast.While, ast.For, ast.AsyncFor)
+
+
+def always_true(test: ast.AST) -> bool:
+    """``while True:`` or ``while 1:``: a condition that can never become False."""
+    return isinstance(test, ast.Constant) and bool(test.value)
+
+
+def has_exit(body: Iterable[ast.AST]) -> bool:
+    """Can the loop with this body end from the inside?
+
+    A ``break`` that belongs to it counts (one inside a nested loop only ends
+    that loop), and so does ``return``, ``raise``, ``assert`` or a call to
+    ``exit()``, ``quit()``, ``sys.exit()`` or ``os._exit()`` anywhere in it.
+    Nested function and class bodies do not run as part of the loop.
+    """
+    stack = [(node, True) for node in body]  # (node, a break here ends our loop)
+    while stack:
+        node, own = stack.pop()
+        if isinstance(node, _SCOPES):
+            continue
+        if isinstance(node, (ast.Return, ast.Raise, ast.Assert)) or (own and isinstance(node, ast.Break)):
+            return True
+        if isinstance(node, ast.Call):
+            func = node.func
+            if isinstance(func, ast.Name) and func.id in _EXIT_FUNCS:
+                return True
+            if (isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name)
+                    and (func.value.id, func.attr) in _EXIT_METHODS):
+                return True
+        if isinstance(node, _LOOPS):
+            stack.extend((child, False) for child in node.body)
+            stack.extend((child, own) for child in node.orelse)  # the else block runs as part of us
+            header = node.test if isinstance(node, ast.While) else node.iter
+            stack.append((header, own))
+            continue
+        stack.extend((child, own) for child in ast.iter_child_nodes(node))
+    return False
+
+
 def _side(node: ast.AST):
     if isinstance(node, ast.Name):
         return ("name", node.id)
@@ -176,6 +218,7 @@ class LoopTransformer(ast.NodeTransformer):
             cond_names=tuple(cond), watched=tuple(watched), compare=compare_spec(node.test),
             receivers=method_receivers([node.test, *node.body]),
             repeat_safe=safe, waits_for_user=waits,
+            always_true=always_true(node.test), exits=has_exit(node.body),
         )
         return self._instrument(node, info)
 
@@ -191,9 +234,11 @@ class LoopTransformer(ast.NodeTransformer):
             header=f"for {_unparse(node.target)} in {_unparse(node.iter)}:",
             cond_names=tuple(cond), watched=tuple(watched),
             iter_name=node.iter.id if isinstance(node.iter, ast.Name) else None,
-            repeat_safe=False, waits_for_user=waits,
+            repeat_safe=False, waits_for_user=waits, exits=has_exit(node.body),
         )
-        return self._instrument(node, info)
+        result = self._instrument(node, info)
+        self._measure_iterable(node, info.loop_id)
+        return result
 
     visit_AsyncFor = ast.NodeTransformer.generic_visit  # never instrument async loops
 
@@ -223,3 +268,26 @@ class LoopTransformer(ast.NodeTransformer):
                 ast.copy_location(child, node)
         node.body.insert(0, check)
         return [begin, node]
+
+    def _measure_iterable(self, node: ast.For, loop_id: int) -> None:
+        """``for x in data:`` becomes ``for x in __loop_autopsy__.sized(ID, data):``.
+
+        ``sized`` notes how many rounds the loop will run (when ``data`` has a
+        length) and returns ``data`` itself, so the loop behaves exactly as before.
+        In ``enumerate(data)`` it is ``data`` that is measured.
+        """
+        target = node.iter
+        if (isinstance(target, ast.Call) and isinstance(target.func, ast.Name) and target.func.id == "enumerate"
+                and target.args and not isinstance(target.args[0], ast.Starred)):
+            parent, target = target, target.args[0]
+        else:
+            parent = None
+        call = ast.Call(ast.Attribute(ast.Name(id=RUNTIME_NAME, ctx=ast.Load()), "sized", ast.Load()),
+                        [ast.Constant(loop_id), target], [])
+        for child in ast.walk(call):
+            if child is not target and not hasattr(child, "lineno"):
+                ast.copy_location(child, target)
+        if parent is None:
+            node.iter = call
+        else:
+            parent.args[0] = call

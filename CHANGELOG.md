@@ -5,6 +5,16 @@ Version numbers follow [Semantic Versioning](https://semver.org/).
 
 ## Unreleased
 
+- New rule "would take too long": a `for` loop over something with a length
+  (a `range`, list, dict, string, NumPy array, ...) that at its current speed
+  needs at least twice the time limit is stopped after 5 s with an estimate,
+  instead of after the full time limit. Loops that can `break`, `return` or
+  `raise` are left to the time limit. New setting `estimate_after` (0 = off).
+- The time-limit report for a `for` loop says how many of its rounds were
+  finished and how long all of them would take.
+- A `while True:` loop with no `break`, `return`, `raise` or `exit()` gets a
+  one-line note when it starts, since it can only end with an error.
+
 - Output guard: the last 20 muted lines are shown when the cell ends, or just
   before its error message. New setting `muted_tail` (0 = off).
 - Health bar and session summary: a cell that adds memory every time it is

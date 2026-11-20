@@ -22,7 +22,7 @@ class LoopStopped(BaseException):
 class Finding:
     """What a detection rule proved about a loop."""
 
-    kind: str  # stuck | cycle | wrong_direction | jumped_over | growing_iterable | memory | time_limit
+    kind: str  # stuck | cycle | wrong_direction | jumped_over | growing_iterable | memory | too_slow | time_limit
     title: str
     explanation: str
     hint: str
@@ -45,6 +45,8 @@ class LoopInfo:
     receivers: Tuple[str, ...] = ()  # names used as ``name.method(...)``; checked at run time
     repeat_safe: bool = True
     waits_for_user: bool = False
+    always_true: bool = False  # ``while True:`` (a condition that is a true constant)
+    exits: bool = True  # the body has a break, return, raise, assert or exit() that can end the loop
 
 
 @dataclass
@@ -62,6 +64,7 @@ class LoopState:
     history: deque = field(default_factory=deque)
     scratch: dict = field(default_factory=dict)
     stopped: Optional[Finding] = None
+    total: Optional[int] = None  # rounds a ``for`` loop will run, when its iterable has a length
 
     def __post_init__(self):
         self.history = deque(maxlen=max(1, self.replay_rows))
@@ -73,6 +76,7 @@ class Settings:
     """User-adjustable settings (``%autopsy config key=value``)."""
 
     time_limit: float = 60.0
+    estimate_after: float = 5.0  # seconds before a slow for loop's total time is estimated (0 = never)
     direction_after: int = 500
     jump_after: int = 100
     growth_after: int = 2000

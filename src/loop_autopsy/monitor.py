@@ -7,8 +7,10 @@ from __future__ import annotations
 
 import os
 import re
+import sys
 import time
 import types
+from collections import deque
 from contextlib import contextmanager
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -39,6 +41,30 @@ def _skip(value: Any) -> bool:
     return callable(value) or isinstance(value, types.ModuleType)
 
 
+# Iterables whose len() is cheap and equals the number of rounds a for loop over them runs.
+_SIZED = (range, list, tuple, str, bytes, bytearray, dict, set, frozenset, deque,
+          type({}.keys()), type({}.values()), type({}.items()))
+# NumPy arrays and pandas Series loop over their rows; a DataFrame loops over its column names, so it is left out.
+_SIZED_BY_NAME = {("numpy", "ndarray"), ("pandas", "Series")}
+
+
+def _length(iterable: Any) -> Optional[int]:
+    t = type(iterable)
+    if t not in _SIZED and (t.__module__.split(".")[0], t.__name__) not in _SIZED_BY_NAME:
+        return None
+    try:
+        return len(iterable)
+    except Exception:  # e.g. a range too big for len(), or a 0-d array
+        return None
+
+
+def endless_note(info: LoopInfo) -> str:
+    """Shown when a ``while True:`` loop with no way out starts."""
+    return (f"[loop-autopsy] Note: `{info.header}` (line {info.lineno}) has no `break`, `return` or `raise` "
+            f"inside, so it can only end with an error. Add a `break` for when the work is done; "
+            f"until then loop-autopsy stops it if it gets stuck, or press ■.")
+
+
 class Monitor:
     """One per IPython shell. Instrumented code calls it as ``__loop_autopsy__``."""
 
@@ -55,6 +81,7 @@ class Monitor:
         self.active: Optional[LoopState] = None
         self.active_time = 0.0
         self._old_exc = None
+        self._noted: set = set()  # loop ids whose "no way out" note was shown
 
     # ------------------------------------------------------------------ transformer side
     def register(self, info: LoopInfo) -> int:
@@ -81,9 +108,21 @@ class Monitor:
 
     # ------------------------------------------------------------------ loop side (hot path)
     def begin(self, loop_id: int) -> None:
-        self.states[loop_id] = LoopState(self.infos[loop_id], started=time.perf_counter(),
+        info = self.infos[loop_id]
+        self.states[loop_id] = LoopState(info, started=time.perf_counter(),
                                          replay_rows=self.settings.replay_rows)
         self.stats["loops"] += 1
+        if info.always_true and not info.exits and self.enabled and loop_id not in self._noted:
+            self._noted.add(loop_id)  # once per loop, even if a function runs it many times
+            print(endless_note(info), file=getattr(sys.stdout, "raw_stream", sys.stdout))
+
+    def sized(self, loop_id: int, iterable: Any) -> Any:
+        """Called with a for loop's iterable just before it starts: remember how
+        many rounds it will run, and hand the iterable back untouched."""
+        state = self.states[loop_id]
+        if state is not None and self.enabled:
+            state.total = _length(iterable)
+        return iterable
 
     def due(self, loop_id: int) -> bool:
         state = self.states[loop_id]
@@ -119,7 +158,8 @@ class Monitor:
         if finding is None and state.checks % 16 == 0:
             finding = growth.check_memory(info, state, values, self.settings)
         if finding is None:
-            finding = detectors.check_time(info, state, self.settings, now)
+            finding = (detectors.check_estimate(info, state, self.settings, now)
+                       or detectors.check_time(info, state, self.settings, now))
         state.next_check = state.rounds + state.stride
         if finding is not None:
             state.stopped = finding
