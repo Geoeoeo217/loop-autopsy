@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from loop_autopsy.report_export import export_html, export_text
+from loop_autopsy.extras.report_export import export_html, export_text
 
 
 def test_export_text_creates_utf8_file(tmp_path):

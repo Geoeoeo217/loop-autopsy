@@ -1,6 +1,6 @@
 import pytest
 
-from loop_autopsy.report_i18n import (
+from loop_autopsy.extras.report_i18n import (
     available_languages,
     message,
     normalize_language,

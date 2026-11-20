@@ -1,4 +1,4 @@
-from loop_autopsy.report_theme import DARK_THEME, LIGHT_THEME, get_theme, theme_from_settings
+from loop_autopsy.extras.report_theme import DARK_THEME, LIGHT_THEME, get_theme, theme_from_settings
 
 
 def test_default_theme_is_light():
