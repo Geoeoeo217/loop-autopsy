@@ -37,13 +37,7 @@ def notes_of(code):
     ("for row in range(3):\n    j = 0\n    while j < 3:\n        print(row)\n    j += 1\n", ("j", 5, "j += 1")),
 ])
 def test_update_after_the_loop_is_found(code, expected):
-    def plain(text):
-        # Python 3.9/3.10 write "(lo, hi) = ..." where 3.11+ writes "lo, hi = ..."
-        return text.replace("(", "").replace(")", "")
-
-    name, line, text = update_of(code)
-    assert (name, line) == expected[:2]
-    assert plain(text) == plain(expected[2])
+    assert update_of(code) == expected
 
 @pytest.mark.parametrize("code", [
     "count = 1\nwhile count <= 5:\n    count += 1\ncount += 1\n",  # changed inside too: the loop is fine
