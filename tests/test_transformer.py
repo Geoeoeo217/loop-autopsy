@@ -128,3 +128,27 @@ def test_paused_transformer_changes_nothing():
     tree = ast.parse("while True:\n    pass\n")
     out = LoopTransformer(lambda info: 0, is_paused=lambda: True).visit(tree)
     assert "__loop_autopsy__" not in ast.unparse(out)
+
+
+def test_classify_calls_edge_cases():
+    watched = {"v", "words", "obj", "fs"}
+    assert classify_calls(ast.parse("v = locals()").body, watched) == (True, False)
+    assert classify_calls(ast.parse('v = ", ".join(words)').body, watched) == (True, False)  # method on a literal
+    assert classify_calls(ast.parse("v = obj.get().strip()").body, watched)[0] is False  # chained call
+    assert classify_calls(ast.parse("v = fs[0]()").body, watched)[0] is False  # calling something unnamed
+
+
+def test_compare_spec_two_constants_is_not_simple():
+    assert compare_spec(ast.parse("1 < 2", mode="eval").body) is None
+
+
+def test_exit_calls_count_as_a_way_out():
+    from loop_autopsy.transformer import has_exit
+    assert has_exit(ast.parse("exit()").body)
+    assert has_exit(ast.parse("sys.exit(1)").body)
+    assert not has_exit(ast.parse("print('again')").body)
+
+
+def test_for_loop_with_yield_is_left_alone():
+    infos, code = transform("def g(xs):\n    for x in xs:\n        yield x\n")
+    assert infos == [] and "__loop_autopsy__" not in code
