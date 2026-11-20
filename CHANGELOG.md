@@ -5,6 +5,8 @@ Version numbers follow [Semantic Versioning](https://semver.org/).
 
 ## Unreleased
 
+### Added
+
 - New rule "would take too long": a `for` loop over something with a length
   (a `range`, list, dict, string, NumPy array, ...) that at its current speed
   needs at least twice the time limit is stopped after 5 s with an estimate,
@@ -14,50 +16,63 @@ Version numbers follow [Semantic Versioning](https://semver.org/).
   finished and how long all of them would take.
 - A `while True:` loop with no `break`, `return`, `raise` or `exit()` gets a
   one-line note when it starts, since it can only end with an error.
-
+- `%autopsy reset` puts every setting back to its default and lists the ones
+  it changed.
+- `%autopsy memory [N]`: memory in use and the biggest variables.
+- `%autopsy memory` shows each variable's share of the memory limit in an
+  "of limit" column (left out when the limit is unknown).
+- `%autopsy memory` also lists big results that IPython's output history
+  (`Out`, `_`, `__`, `___`) still keeps alive. A variable that a cell displayed
+  stays in memory after `del`; the report names it, says whether a variable
+  still uses it, and points to `%reset -f out`, which frees it.
 - Output guard: the last 20 muted lines are shown when the cell ends, or just
   before its error message. New setting `muted_tail` (0 = off).
 - Health bar and session summary: a cell that adds memory every time it is
   re-run (two re-runs in a row, 10 MB or more each) gets a note explaining
   why. New setting `rerun_growth_mb` (0 = off).
+- Report helper modules: themes, translated labels, accessibility checks,
+  export to files, report metrics and sparkline charts (`report_*.py`,
+  `sparkline.py`).
 
-- `%autopsy memory` shows each variable's share of the memory limit in an
-  "of limit" column (left out when the limit is unknown).
+### Changed
 
+- Output guard also mutes `stderr` and `display()` output after the line limit.
 - `MEM_LIMIT` may now be written with a unit, such as `2G` or `512M` (powers of
   1024, like JupyterHub's `mem_limit`). Before, only a plain number of bytes
   worked and `2G` was silently ignored.
 
-- `%autopsy memory` also lists big results that IPython's output history
-  (`Out`, `_`, `__`, `___`) still keeps alive. A variable that a cell displayed
-  stays in memory after `del`; the report names it, says whether a variable
-  still uses it, and points to `%reset -f out`, which frees it.
+### Fixed
 
-- Fixed: the sizes in `%autopsy memory` and in the health bar's "biggest
-  variables" now include what a variable holds. A list of lists was reported at
-  about a fifth of its real size, and an object that holds a big list as a few
-  dozen bytes, so the variable using the most memory could be missing from the
-  table.
-
-- Fixed: for a condition that compares two variables, such as `while lo < hi`,
-  the "wrong direction" and "jumped over" reports now name the variable that
+- The sizes in `%autopsy memory` and in the health bar's "biggest variables"
+  now include what a variable holds. A list of lists was reported at about a
+  fifth of its real size, and an object that holds a big list as a few dozen
+  bytes, so the variable using the most memory could be missing from the table.
+- For a condition that compares two variables, such as `while lo < hi`, the
+  "wrong direction" and "jumped over" reports now name the variable that
   actually moved (or both). They used to blame the left one even when it never
   changed. The hint's example (`+=` or `-=`) now also points the right way.
+- `%autopsy config` rejects `inf`, `nan` and a missing value with a short
+  message. `replay_rows=inf` used to end in a traceback, and `time_limit=nan`
+  was accepted.
+- An outer loop no longer watches the names inside a function defined in its
+  body, or the check inserted into an inner loop (`locals`).
 
+### Development
+
+- Continuous integration on GitHub Actions: Python 3.9–3.13 on Linux, plus
+  Windows and macOS; the package build is checked too.
+- `pytest` now runs straight from a fresh clone, without `pip install -e` first.
 - Tests that run cells in a real Jupyter kernel (`tests/test_real_kernel.py`),
   including the whole demo notebook.
 - The demo notebook is saved with its outputs; `python examples/refresh_demo.py`
   runs it again and saves them.
-- Many more tests for `growth.py` (now fully covered) and `detectors.py`.
-
-- `pytest` now runs straight from a fresh clone, without `pip install -e` first.
-- Output guard also mutes `stderr` and `display()` output after the line limit.
-- Continuous integration on GitHub Actions: Python 3.9–3.13 on Linux, plus
-  Windows and macOS; the package build is checked too.
-- Tests for the monitor and the `%autopsy` magics, a check that the README
-  matches the code, and an overhead benchmark (`benchmarks/overhead.py`).
-- `%autopsy memory [N]`: memory in use and the biggest variables.
+- Tests for the monitor, the `%autopsy` magics and the settings, a check that
+  the README matches the code, and an overhead benchmark
+  (`benchmarks/overhead.py`).
+- Many more tests for `growth.py` (now fully covered), `detectors.py` and the
+  loop transformer.
 - License checks for every package loop-autopsy uses (`THIRD_PARTY_LICENSES.md`).
+- `CONTRIBUTING.md` with who owns which files and how to make a change.
 
 ## 0.3.0 (2026-11-14)
 
