@@ -32,7 +32,7 @@ def notes_of(code):
 @pytest.mark.parametrize("code, expected", [
     ("count = 1\nwhile count <= 5:\n    print(count)\ncount += 1\n", ("count", 4, "count += 1")),
     ("i = 0\nwhile i < 10:\n    total = i\ni = i + 1\n", ("i", 4, "i = i + 1")),
-    ("lo, hi = 0, 9\nwhile lo < hi:\n    mid = 4\nlo, hi = mid, hi\n", ("lo", 4, "lo, hi = (mid, hi)")),
+    ("lo, hi = 0, 9\nwhile lo < hi:\n    mid = 4\nlo, hi = mid, hi\n", ("lo", 4, ast.unparse(ast.parse("lo, hi = mid, hi")))),
     ("def f(n):\n    while n > 0:\n        print(n)\n    n -= 1\n", ("n", 4, "n -= 1")),
     ("for row in range(3):\n    j = 0\n    while j < 3:\n        print(row)\n    j += 1\n", ("j", 5, "j += 1")),
 ])
