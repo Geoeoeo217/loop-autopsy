@@ -1,7 +1,6 @@
 import pytest
 
-from loop_autopsy.sparkline import BLOCKS, sparkline_line, sparkline_svg, sparkline_text
-
+from loop_autopsy.extras.sparkline import BLOCKS, sparkline_line, sparkline_svg, sparkline_text
 
 def test_empty_and_non_numeric_give_nothing():
     assert sparkline_text([]) == ""
