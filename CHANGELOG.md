@@ -5,8 +5,17 @@ Version numbers follow [Semantic Versioning](https://semver.org/).
 
 ## Unreleased
 
+Nothing yet.
+
+## 0.3.0 (2026-11-20)
+
+The first release on PyPI since 0.2.0. It contains everything below.
+
 ### Added
 
+- Runaway recursion: a `RecursionError` from a function typed in a cell is
+  replaced by a short report (which function, its first and last arguments,
+  and why the base case was never reached).
 - New rule "would take too long": a `for` loop over something with a length
   (a `range`, list, dict, string, NumPy array, ...) that at its current speed
   needs at least twice the time limit is stopped after 5 s with an estimate,
@@ -18,6 +27,9 @@ Version numbers follow [Semantic Versioning](https://semver.org/).
   one-line note when it starts, since it can only end with an error.
 - `%autopsy reset` puts every setting back to its default and lists the ones
   it changed.
+- A mistyped command or setting name gets a suggestion, such as
+  `Unknown command 'stauts'. Did you mean 'status'?` or
+  `unknown setting; did you mean 'time_limit'?`.
 - `%autopsy memory [N]`: memory in use and the biggest variables.
 - `%autopsy memory` shows each variable's share of the memory limit in an
   "of limit" column (left out when the limit is unknown).
@@ -73,13 +85,8 @@ Version numbers follow [Semantic Versioning](https://semver.org/).
   loop transformer.
 - License checks for every package loop-autopsy uses (`THIRD_PARTY_LICENSES.md`).
 - `CONTRIBUTING.md` with who owns which files and how to make a change.
-
-## 0.3.0 (2026-11-14)
-
-- Runaway recursion: a `RecursionError` from a function typed in a cell is
-  replaced by a short report (which function, its first and last arguments,
-  and why the base case was never reached).
-- Demo notebook section for recursion.
+- The demo notebook has a section for every feature, including recursion.
+- PyPI page lists the supported Python versions (3.9–3.13).
 
 ## 0.2.0 (2026-11-14)
 
