@@ -282,6 +282,16 @@ To measure what watching costs per loop round on your own computer:
 ```bash
 python benchmarks/overhead.py
 ```
+## Extras (optional)
+
+The modules in `loop_autopsy/extras/` are optional add-ons, not part of the core:
+
+- `report_theme`: light/dark themes for the HTML report
+- `report_i18n`: multi-language report labels (en, id, zh)
+- `report_export`: export reports to text or HTML files
+- `sparkline`: mini chart of a variable's path against its stop value
+
+The core feature of this project: **stopping the loop and explaining why.**
 
 ## Team
 
