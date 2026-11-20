@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 from collections import deque
+from difflib import get_close_matches
 from dataclasses import dataclass, field, fields
 from typing import Any, Optional, Tuple
 
@@ -16,6 +17,13 @@ class LoopStopped(BaseException):
     def __init__(self, finding: "Finding"):
         super().__init__(finding.title)
         self.finding = finding
+
+
+class UnknownSetting(KeyError):
+    """A setting name that does not exist. Printed without the extra quotes KeyError adds."""
+
+    def __str__(self) -> str:
+        return str(self.args[0]) if self.args else ""
 
 
 @dataclass
@@ -101,7 +109,10 @@ class Settings:
         """Set ``key`` from a string such as ``"30"``; returns the new value."""
         names = {f.name: f for f in fields(self)}
         if key not in names:
-            raise KeyError(f"unknown setting {key!r}; choose from: {', '.join(names)}")
+            close = get_close_matches(key, names, n=1, cutoff=0.6)
+            if close:
+                raise UnknownSetting(f"unknown setting; did you mean '{close[0]}'?")
+            raise UnknownSetting(f"unknown setting; choose from: {', '.join(names)}")
         current = getattr(self, key)
         if isinstance(current, str):
             value: Any = raw.strip().strip("'\"").lower()

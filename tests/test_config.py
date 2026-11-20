@@ -129,3 +129,18 @@ def test_mistyped_command_in_the_magic_still_shows_help(shell, capsys):
     assert out.startswith("Unknown command 'stauts'. Did you mean 'status'?") and HELP.strip() in out
     shell.run_cell("%autopsy help")
     assert "Unknown command" not in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("typed, suggestion", [("time_limt", "time_limit"), ("replayrows", "replay_rows"),
+                                               ("heatmapp", "heatmap")])
+def test_mistyped_setting_suggests_the_closest_one(typed, suggestion):
+    with pytest.raises(KeyError) as err:
+        Settings().update(typed, "5")
+    assert str(err.value) == f"unknown setting; did you mean '{suggestion}'?"
+
+
+def test_unknown_setting_message_has_no_extra_quotes(shell, capsys):
+    capsys.readouterr()
+    shell.run_cell("%autopsy config time_limt=5")
+    out = capsys.readouterr().out
+    assert out.strip() == "Could not set 'time_limt': unknown setting; did you mean 'time_limit'?"
