@@ -14,6 +14,7 @@ HELP = """loop-autopsy commands
   %autopsy summary [all|clear]   every cell run this session, heaviest first
   %autopsy memory [N]       memory in use and the N biggest variables (default 5)
   %autopsy config key=value ...  change a setting, e.g. %autopsy config time_limit=120
+  %autopsy reset            put every setting back to its default
   %%autopsy off             (first line of a cell) run that cell without watching
 """
 
@@ -74,6 +75,14 @@ class AutopsyMagics(Magics):
                     print(f"{key} = {settings.update(key, raw)}")
                 except (KeyError, ValueError) as err:
                     print(f"Could not set {key!r}: {err}")
+        elif command == "reset":
+            changed = settings.reset()
+            if not changed:
+                print("All settings already have their default values.")
+            else:
+                print("Settings are back to their defaults:")
+                for key, (old, new) in changed.items():
+                    print(f"  {key:<17}{old} -> {new}")
         else:
             print(HELP)
         return None

@@ -119,6 +119,17 @@ class Settings:
     def as_dict(self) -> dict:
         return {f.name: getattr(self, f.name) for f in fields(self)}
 
+    def reset(self) -> dict:
+        """Put every setting back to its default, in place (other parts of the package keep
+        a reference to this object). Returns ``{key: (old, new)}`` for the ones that changed."""
+        changed = {}
+        for name, default in Settings().as_dict().items():
+            old = getattr(self, name)
+            if old != default:
+                changed[name] = (old, default)
+                setattr(self, name, default)
+        return changed
+
 
 def _number(key: str, raw: str) -> float:
     """Read a setting's number, with a message a beginner can act on."""

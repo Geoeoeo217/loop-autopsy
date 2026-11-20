@@ -84,3 +84,26 @@ def test_loop_stopped_is_not_an_exception():
     stop = LoopStopped(finding)
     assert not isinstance(stop, Exception)  # `except Exception:` in a student loop cannot swallow it
     assert stop.finding is finding and str(stop) == "stuck loop"
+
+
+def test_reset_restores_defaults_in_place_and_reports_changes():
+    s = Settings()
+    same = s
+    s.update("time_limit", "0")
+    s.update("heatmap", "off")
+    assert s.reset() == {"time_limit": (0.0, 60.0), "heatmap": ("off", "auto")}
+    assert same is s and s.as_dict() == Settings().as_dict()
+    assert s.reset() == {}  # nothing left to change
+
+
+def test_reset_magic(shell, capsys):
+    capsys.readouterr()
+    shell.run_cell("%autopsy config time_limit=0 replay_rows=3")
+    shell.run_cell("%autopsy reset")
+    out = capsys.readouterr().out
+    assert "back to their defaults" in out
+    assert "time_limit       0.0 -> 60.0" in out and "replay_rows      3 -> 6" in out
+    shell.run_cell("%autopsy reset")
+    assert "already have their default values" in capsys.readouterr().out
+    shell.run_cell("%autopsy help")
+    assert "%autopsy reset" in capsys.readouterr().out
