@@ -107,3 +107,25 @@ def test_reset_magic(shell, capsys):
     assert "already have their default values" in capsys.readouterr().out
     shell.run_cell("%autopsy help")
     assert "%autopsy reset" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("typed, suggestion", [("stauts", "status"), ("rest", "reset"), ("memroy", "memory"),
+                                               ("sumary", "summary")])
+def test_mistyped_command_suggests_the_closest_one(typed, suggestion):
+    from loop_autopsy.magics import unknown_command
+    assert unknown_command(typed) == f"Unknown command '{typed}'. Did you mean '{suggestion}'?"
+
+
+def test_unknown_command_without_a_close_match():
+    from loop_autopsy.magics import unknown_command
+    assert unknown_command("dance") == "Unknown command 'dance'."
+
+
+def test_mistyped_command_in_the_magic_still_shows_help(shell, capsys):
+    from loop_autopsy.magics import HELP
+    capsys.readouterr()
+    shell.run_cell("%autopsy stauts")
+    out = capsys.readouterr().out
+    assert out.startswith("Unknown command 'stauts'. Did you mean 'status'?") and HELP.strip() in out
+    shell.run_cell("%autopsy help")
+    assert "Unknown command" not in capsys.readouterr().out

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from difflib import get_close_matches
+
 from IPython.core.magic import Magics, line_cell_magic, magics_class
 
 from . import growth
@@ -17,6 +19,15 @@ HELP = """loop-autopsy commands
   %autopsy reset            put every setting back to its default
   %%autopsy off             (first line of a cell) run that cell without watching
 """
+
+COMMANDS = ("status", "on", "off", "last", "heatmap", "summary", "memory", "config", "reset", "help")
+
+
+def unknown_command(command: str) -> str:
+    """A one-line note for a mistyped command, with the closest real one if there is one."""
+    close = get_close_matches(command, COMMANDS, n=1, cutoff=0.6)
+    hint = f" Did you mean '{close[0]}'?" if close else ""
+    return f"Unknown command '{command}'.{hint}"
 
 
 @magics_class
@@ -84,5 +95,7 @@ class AutopsyMagics(Magics):
                 for key, (old, new) in changed.items():
                     print(f"  {key:<17}{old} -> {new}")
         else:
+            if command not in COMMANDS:
+                print(unknown_command(command) + "\n")
             print(HELP)
         return None
