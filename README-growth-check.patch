@@ -1,0 +1,14 @@
+diff --git a/README.md b/README.md
+--- a/README.md
++++ b/README.md
+@@ -257,6 +257,10 @@
+ one value using the same estimator as `%autopsy memory`. Shared values can
+ appear more than once, and container overhead is excluded from the rows.
+ 
++### Preview a growing-list loop
++
++Use [the optional `%%growthcheck` command](docs/growth-check.md) to locate direct list updates inside a `for` loop before running the cell.
++
+ ## Settings
+ 
+ Change any of these with `%autopsy config key=value` (for example `%autopsy config time_limit=120`).
