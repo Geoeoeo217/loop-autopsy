@@ -37,7 +37,10 @@ def notes_of(code):
     ("for row in range(3):\n    j = 0\n    while j < 3:\n        print(row)\n    j += 1\n", ("j", 5, "j += 1")),
 ])
 def test_update_after_the_loop_is_found(code, expected):
-    assert update_of(code) == expected
+    name, line, text = update_of(code)
+    assert (name, line) == expected[:2]
+    # Python 3.9/3.10 ast.unparse writes tuple targets as "(lo, hi) = ..."
+    assert text.replace("(lo, hi) =", "lo, hi =") == expected[2]
 
 
 @pytest.mark.parametrize("code", [
