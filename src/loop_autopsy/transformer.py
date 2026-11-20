@@ -18,6 +18,7 @@ import ast
 from collections import deque
 from typing import Callable, Iterable, List, Optional, Set, Tuple
 
+from . import loop_notes
 from .config import LoopInfo
 
 RUNTIME_NAME = "__loop_autopsy__"
@@ -197,11 +198,13 @@ class LoopTransformer(ast.NodeTransformer):
         self.register = register
         self.max_watched = max_watched
         self.is_paused = is_paused
+        self._facts: dict = {}
 
     # IPython calls transformer.visit(module) once per cell.
     def visit_Module(self, node: ast.Module):
         if self.is_paused():
             return node
+        self._facts = loop_notes.analyse(node)  # read the cell before any loop is rewritten
         self.generic_visit(node)
         return ast.fix_missing_locations(node)
 
@@ -212,6 +215,7 @@ class LoopTransformer(ast.NodeTransformer):
         cond = names_in([node.test])
         watched = self._watched(cond, node.body)
         safe, waits = classify_calls([node.test, *node.body], set(watched))
+        facts = self._facts.get(id(node), loop_notes.LoopFacts())
         info = LoopInfo(
             loop_id=-1, kind="while", lineno=node.lineno,
             header=f"while {_unparse(node.test)}:", test_src=_unparse(node.test),
@@ -219,6 +223,7 @@ class LoopTransformer(ast.NodeTransformer):
             receivers=method_receivers([node.test, *node.body]),
             repeat_safe=safe, waits_for_user=waits,
             always_true=always_true(node.test), exits=has_exit(node.body),
+            notes=tuple(facts.notes), outside_update=facts.outside_update,
         )
         return self._instrument(node, info)
 
@@ -235,6 +240,7 @@ class LoopTransformer(ast.NodeTransformer):
             cond_names=tuple(cond), watched=tuple(watched),
             iter_name=node.iter.id if isinstance(node.iter, ast.Name) else None,
             repeat_safe=False, waits_for_user=waits, exits=has_exit(node.body),
+            notes=tuple(self._facts.get(id(node), loop_notes.LoopFacts()).notes),
         )
         result = self._instrument(node, info)
         self._measure_iterable(node, info.loop_id)

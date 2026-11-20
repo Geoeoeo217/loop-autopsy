@@ -55,6 +55,8 @@ class LoopInfo:
     waits_for_user: bool = False
     always_true: bool = False  # ``while True:`` (a condition that is a true constant)
     exits: bool = True  # the body has a break, return, raise, assert or exit() that can end the loop
+    notes: Tuple[str, ...] = ()  # read from the code (loop_notes.py); shown once when the loop starts
+    outside_update: Optional[Tuple[str, int, str]] = None  # (name, line, code): its update sits after the loop
 
 
 @dataclass

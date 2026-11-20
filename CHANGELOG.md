@@ -5,7 +5,19 @@ Version numbers follow [Semantic Versioning](https://semver.org/).
 
 ## Unreleased
 
-Nothing yet.
+### Added
+
+- Update line after the loop: when the line right after a `while` loop
+  changes a variable of its condition and nothing inside the loop does, the
+  stuck and time-limit reports name that line and ask whether it should be
+  indented.
+- A `for` loop over `itertools.count()`, `itertools.cycle(...)` or
+  `itertools.repeat(x)` with no `break`, `return` or `raise` gets a note on
+  its first round.
+- A bare `except:` or `except BaseException:` inside or around a loop gets a
+  note when the loop starts: inside, it swallows ■; around, it hides a
+  stopped loop's report.
+- New module `loop_notes.py` holds these checks.
 
 ## 0.3.0 (2026-11-20)
 

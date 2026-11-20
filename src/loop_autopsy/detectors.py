@@ -14,6 +14,7 @@ from fractions import Fraction
 from typing import Any, Dict, Optional
 
 from .config import Finding, LoopInfo, LoopState, Settings
+from .loop_notes import indent_hint
 
 OPAQUE = object()  # "cannot see inside this value"
 SCALARS = (bool, int, float, complex, Fraction, Decimal)
@@ -170,6 +171,8 @@ def _stuck_finding(info: LoopInfo, values: Dict[str, Any]) -> Finding:
             elif op in (">", ">="):
                 example = f" (for example `{var} -= 1`)"
         hint = f"Add a line inside the loop that changes {names} so that `{cond}` eventually becomes False{example}."
+        if info.outside_update is not None:
+            hint = indent_hint(info.outside_update)  # the line exists, but after the loop
     else:
         explanation = (
             f"The condition `{cond}` never changes and nothing inside the loop changes either, "
@@ -385,10 +388,13 @@ def check_time(info: LoopInfo, state: LoopState, settings: Settings, now: float)
                  f"would take about {duration(elapsed * total / done)}.")
     elif info.always_true and not info.exits:
         extra = " It also has no `break`, `return` or `raise`, so it could not end on its own."
+    hint = ("Use the replay table to see whether the values move towards the stop condition. "
+            f"To allow longer loops: `%autopsy config time_limit={int(settings.time_limit * 5)}`.")
+    if info.outside_update is not None:
+        hint = f"{indent_hint(info.outside_update)} {hint}"
     return Finding(
         "time_limit", "loop ran too long",
         f"This loop has been running for {elapsed:.0f} s ({state.rounds:,} rounds). loop-autopsy could not prove "
         f"that it is stuck{reason}. It might just be slow, or stuck in a way the rules cannot see.{extra}",
-        "Use the replay table to see whether the values move towards the stop condition. "
-        f"To allow longer loops: `%autopsy config time_limit={int(settings.time_limit * 5)}`.",
+        hint,
     )

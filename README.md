@@ -100,6 +100,24 @@ how far it got, when its length is known.
 A `while True:` loop with no `break`, `return`, `raise` or `exit()` inside gets
 a one-line note as soon as it starts, because it can only end with an error.
 
+Three more mistakes are read straight from the code:
+
+- **Update line after the loop.** When the line right after a `while` loop
+  changes a variable of its condition and nothing inside the loop does, the
+  hint names that line and asks whether it should be indented:
+  `Line 4 (count += 1) changes count, but it comes after the loop`. The hint
+  is left out when the loop has a `break`, `return` or `raise`, or calls a
+  function of your own that could change the variable.
+- **Endless iterator.** A `for` loop over `itertools.count()`,
+  `itertools.cycle(...)` or `itertools.repeat(x)` with no `break`, `return` or
+  `raise` gets a note on its first round, since it can only end with an error.
+- **Catch-all `except`.** A bare `except:` or `except BaseException:` also
+  catches the stop button ■ and loop-autopsy's stop signal. Inside a loop, the
+  note says ■ will only jump to the `except` block. Around a loop, it says a
+  stopped loop's report will be hidden (`%autopsy last` still shows it). There
+  is no note when the `except` block re-raises, or, inside a loop, when it
+  leaves the loop.
+
 Runaway recursion is the recursive cousin of an infinite loop. Python already
 stops it, but with a traceback hundreds of lines long. loop-autopsy replaces that
 with a report: which function kept calling itself (or which functions kept
@@ -228,7 +246,9 @@ size such as `2G` or `512M`), then the container's memory limit, then the comput
   `benchmarks/overhead.py` on Python 3.12. That is invisible when a round does real
   work, but a loop that does almost nothing per round (such as `i += 1`) runs
   about 3 to 10 times slower. Use `%%autopsy off` for heavy number crunching.
-- A bare `except:` inside a loop can catch the stop signal, just as it catches ■.
+- A bare `except:` around a loop can catch the stop signal, just as it catches ■.
+  loop-autopsy points this out with a note when the loop starts, but it does
+  not change how your `except` behaves.
 - Runaway recursion is explained only for functions typed in notebook cells, and
   only when the `RecursionError` reaches the top of the cell. A `RecursionError`
   your own code catches is left alone.
@@ -270,7 +290,7 @@ Built by a team of five for CS1302 (Introduction to Computer Programming).
 | Member | Part |
 | --- | --- |
 | NATHANAEL George Steindhart | project lead: loop rewriting (`transformer.py`), run-time glue (`monitor.py`), settings (`config.py`), magics, packaging and docs |
-| SETIAWAN Matthew Henson | detection rules: stuck, cycle, wrong direction, jumped over, time limit (`detectors.py`), runaway recursion (`recursion.py`) |
+| SETIAWAN Matthew Henson | detection rules: stuck, cycle, wrong direction, jumped over, time limit (`detectors.py`), runaway recursion (`recursion.py`), notes read from the code (`loop_notes.py`) |
 | LATHIF Muhammad Akmal | memory and growing-list rules, `%autopsy memory` (`growth.py`); license checks and third-party licenses (`tests/test_license.py`, `THIRD_PARTY_LICENSES.md`) |
 | KWAN Kendrick Matthew | replay table and reports (`report.py`); report helpers for themes, translations, accessibility checks, export, metrics and sparkline charts (`report_*.py`, `sparkline.py`) |
 | HANDAYA Clement Steward | cell health bar, session summary and output guard (`heatmap.py`); CI, benchmark, real-kernel and documentation tests |

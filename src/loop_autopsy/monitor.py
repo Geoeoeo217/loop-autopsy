@@ -14,7 +14,7 @@ from collections import deque
 from contextlib import contextmanager
 from typing import Any, Dict, List, Optional, Tuple
 
-from . import detectors, growth, recursion, report
+from . import detectors, growth, loop_notes, recursion, report
 from .config import Finding, LoopInfo, LoopState, LoopStopped, Settings
 
 _TIMEIT = re.compile(r"^\s*%%?timeit\b", re.MULTILINE)
@@ -65,6 +65,11 @@ def endless_note(info: LoopInfo) -> str:
             f"until then loop-autopsy stops it if it gets stuck, or press ■.")
 
 
+def _print_note(text: str) -> None:
+    """Notes go straight to the real output, past the output guard."""
+    print(text, file=getattr(sys.stdout, "raw_stream", sys.stdout))
+
+
 class Monitor:
     """One per IPython shell. Instrumented code calls it as ``__loop_autopsy__``."""
 
@@ -81,7 +86,8 @@ class Monitor:
         self.active: Optional[LoopState] = None
         self.active_time = 0.0
         self._old_exc = None
-        self._noted: set = set()  # loop ids whose "no way out" note was shown
+        self._noted: set = set()  # loop ids whose notes from the code were shown
+        self._noted_endless: set = set()  # loop ids whose "never runs out" note was shown
 
     # ------------------------------------------------------------------ transformer side
     def register(self, info: LoopInfo) -> int:
@@ -112,9 +118,11 @@ class Monitor:
         self.states[loop_id] = LoopState(info, started=time.perf_counter(),
                                          replay_rows=self.settings.replay_rows)
         self.stats["loops"] += 1
-        if info.always_true and not info.exits and self.enabled and loop_id not in self._noted:
+        endless = info.always_true and not info.exits
+        if (endless or info.notes) and self.enabled and loop_id not in self._noted:
             self._noted.add(loop_id)  # once per loop, even if a function runs it many times
-            print(endless_note(info), file=getattr(sys.stdout, "raw_stream", sys.stdout))
+            for note in ((endless_note(info),) if endless else ()) + info.notes:
+                _print_note(note)
 
     def sized(self, loop_id: int, iterable: Any) -> Any:
         """Called with a for loop's iterable just before it starts: remember how
@@ -122,6 +130,12 @@ class Monitor:
         state = self.states[loop_id]
         if state is not None and self.enabled:
             state.total = _length(iterable)
+            info = state.info
+            if state.total is None and not info.exits and loop_id not in self._noted_endless:
+                kind = loop_notes.endless_iterable(iterable)
+                if kind:  # shown on the first round, so an empty cycle() stays quiet
+                    state.scratch["endless_note"] = loop_notes.endless_iterator_note(
+                        info.header, info.lineno, kind, self.settings.time_limit)
         return iterable
 
     def due(self, loop_id: int) -> bool:
@@ -144,6 +158,10 @@ class Monitor:
                     values[name] = value
         if state.checks == 1:
             growth.remember_start(state, values)
+            note = state.scratch.pop("endless_note", None)
+            if note is not None:
+                self._noted_endless.add(loop_id)
+                _print_note(note)
         report.record(state, values)
         self.active, self.active_time = state, now
 
