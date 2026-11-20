@@ -8,7 +8,7 @@ from loop_autopsy.config import Settings
 from loop_autopsy.magics import HELP
 
 ROOT = Path(__file__).resolve().parent.parent
-COMMANDS = ("on", "off", "last", "heatmap", "summary", "memory", "config")
+COMMANDS = ("on", "off", "last", "heatmap", "summary", "memory", "config", "reset")
 
 
 def read(name: str) -> str:
