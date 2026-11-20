@@ -202,6 +202,37 @@ normal.
 
 Try [examples/demo.ipynb](examples/demo.ipynb) for every feature in one notebook.
 
+### Compare variable sizes across cells
+
+To see which variables grew while a cell ran, load the optional extension and
+save a checkpoint before running the code you want to measure:
+
+```python
+%load_ext loop_autopsy.growth_diff
+samples = bytearray(1024)
+%growthdiff mark
+```
+
+In the next cell, grow the buffer and display the changes:
+
+```python
+samples.extend(bytes(4096))
+%growthdiff show
+```
+
+The report lists `samples` as `grew` and shows its estimated increase in bytes.
+New, removed and shrinking variables also appear, ordered by absolute size
+change. Estimates are per variable name, so two names for the same object can
+both appear. An object whose name was removed may still be held by another name or
+by the notebook's output history.
+
+| Command | Effect |
+|---|---|
+| `%growthdiff mark` | Save the current names and estimated sizes as the new checkpoint. |
+| `%growthdiff` or `%growthdiff show` | Show up to 10 changes since the checkpoint. Repeated calls use the same checkpoint. |
+| `%growthdiff show 3` | Show the three largest changes. Use any positive integer. |
+| `%growthdiff clear` | Discard the checkpoint. |
+
 ## Settings
 
 Change any of these with `%autopsy config key=value` (for example `%autopsy config time_limit=120`).
