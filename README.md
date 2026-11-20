@@ -266,13 +266,13 @@ python benchmarks/overhead.py
 
 Built by a team of five for CS1302 (Introduction to Computer Programming).
 
-| Member                      | Part                                                                                                                         |
-| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| NATHANAEL George Steindhart | project lead: loop rewriting (`transformer.py`), run-time glue (`monitor.py`), magics, packaging                             |
-| SETIAWAN Matthew Henson     | detection rules: stuck, cycle, wrong direction, jumped over, time limit (`detectors.py`), runaway recursion (`recursion.py`) |
-| LATHIF Muhammad Akmal       | memory and growing-list rules, `%autopsy memory` (`growth.py`); license checks and third-party licenses (`tests/test_license.py`, `THIRD_PARTY_LICENSES.md`) |
-| KWAN Kendrick Matthew       | replay table and reports (`report.py`)                                                                                       |
-| HANDAYA Clement Steward     | cell health bar, session summary and output guard (`heatmap.py`)                                                             |
+| Member | Part |
+| --- | --- |
+| NATHANAEL George Steindhart | project lead: loop rewriting (`transformer.py`), run-time glue (`monitor.py`), settings (`config.py`), magics, packaging and docs |
+| SETIAWAN Matthew Henson | detection rules: stuck, cycle, wrong direction, jumped over, time limit (`detectors.py`), runaway recursion (`recursion.py`) |
+| LATHIF Muhammad Akmal | memory and growing-list rules, `%autopsy memory` (`growth.py`); license checks and third-party licenses (`tests/test_license.py`, `THIRD_PARTY_LICENSES.md`) |
+| KWAN Kendrick Matthew | replay table and reports (`report.py`); report helpers for themes, translations, accessibility checks, export, metrics and sparkline charts (`report_*.py`, `sparkline.py`) |
+| HANDAYA Clement Steward | cell health bar, session summary and output guard (`heatmap.py`); CI, benchmark, real-kernel and documentation tests |
 
 
 ## License
