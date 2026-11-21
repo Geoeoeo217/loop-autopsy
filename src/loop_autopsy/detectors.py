@@ -14,7 +14,7 @@ from fractions import Fraction
 from typing import Any, Dict, Optional
 
 from .config import Finding, LoopInfo, LoopState, Settings
-from .loop_notes import indent_hint
+from .loop_notes import branch_hint, indent_hint
 
 OPAQUE = object()  # "cannot see inside this value"
 SCALARS = (bool, int, float, complex, Fraction, Decimal)
@@ -173,6 +173,8 @@ def _stuck_finding(info: LoopInfo, values: Dict[str, Any]) -> Finding:
         hint = f"Add a line inside the loop that changes {names} so that `{cond}` eventually becomes False{example}."
         if info.outside_update is not None:
             hint = indent_hint(info.outside_update)  # the line exists, but after the loop
+        elif info.branch_updates:
+            hint = branch_hint(info.branch_updates, values) or hint  # the line exists, in an if that never runs
     else:
         explanation = (
             f"The condition `{cond}` never changes and nothing inside the loop changes either, "
