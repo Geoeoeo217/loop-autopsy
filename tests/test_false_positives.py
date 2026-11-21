@@ -67,6 +67,8 @@ CORRECT_LOOPS = {
     "state machine that visits states again before it ends":
         "state, turns = 'red', 0\nwhile state != 'done':\n    turns += 1\n"
         "    state = {'red': 'green', 'green': 'yellow', 'yellow': 'red'}[state] if turns < 30 else 'done'\nresult = turns",
+    "update inside an if that only runs some rounds":
+        "i, tick = 0, 0\nwhile i < 50:\n    tick += 1\n    if tick % 3 == 0:\n        i += 1\nresult = i",
     "while True with a break":
         "i = 0\nwhile True:\n    i += 1\n    if i == 500:\n        break\nresult = i",
     "same variables every round, iterator moves underneath":
