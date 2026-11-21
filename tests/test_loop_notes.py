@@ -1,5 +1,6 @@
 """Notes read from a loop's code (loop_notes.py): an update line after the loop,
-an endless iterator, and a catch-all ``except``."""
+an update inside an ``if`` that never runs, an endless iterator, and a
+catch-all ``except``."""
 import ast
 import itertools
 
@@ -227,3 +228,78 @@ def test_catch_all_note_in_a_correct_loop_in_a_shell(shell, capsys):
     shell.run_cell("n = 0\nwhile n < 3:\n    try:\n        n += 1\n    except:\n        pass\n")
     out = capsys.readouterr().out
     assert out.count("also catches the stop button") == 1 and shell.user_ns["n"] == 3
+
+
+# --------------------------------------------------------------------------- 1b. update in an if that never runs
+def stuck_hint(shell, code):
+    error = shell.run_cell(code).error_in_exec
+    assert isinstance(error, LoopStopped) and error.finding.kind == "stuck", code
+    return error.finding.hint
+
+
+@pytest.mark.parametrize("code, expected", [
+    ("i, y = 0, 2\nwhile i < 10:\n    if y > 3:\n        i += 1\n",
+     "Line 4 (`i += 1`) changes `i`, but it never runs: it is inside `if y > 3:` (line 3), "
+     "and `y > 3` is False every round (`y = 2` never changes)."),
+    ("i, done = 0, True\nwhile i < 10:\n    if done:\n        print('waiting')\n    else:\n        i += 1\n",
+     "it is in the `else` part of `if done:` (line 3), and `done` is True every round "
+     "(`done = True` never changes), so that part is always skipped."),
+    ("i = 1\nwhile i < 10:\n    if i % 2 == 0:\n        i += 1\n",  # i only changes after its own check
+     "inside `if i % 2 == 0:` (line 3), and `i % 2 == 0` is False every round (`i = 1` never changes)."),
+    ("i, a, b = 0, 1, 5\nwhile i < 10:\n    if a > 0:\n        if b < 3:\n            i += 1\n",
+     "inside `if b < 3:` (line 4), and `b < 3` is False every round"),
+    ("i, mode = 0, 'a'\nwhile i < 10:\n    if mode == 'x':\n        pass\n    elif mode == 'b':\n        i += 1\n",
+     "inside `elif mode == 'b':` (line 5)"),
+    ("i, mode = 0, 'a'\nwhile i < 10:\n    if mode == 'a':\n        pass\n    elif mode == 'b':\n        i += 1\n",
+     "in the `elif` part of `if mode == 'a':` (line 3), and `mode == 'a'` is True every round"),
+    ("n, nums = 0, []\nwhile n < 3:\n    if len(nums) > 0:\n        n += 1\n",
+     "`len(nums) > 0` is False every round (`nums = []` never changes)"),
+])
+def test_update_in_an_if_that_never_runs(shell, code, expected):
+    hint = stuck_hint(shell, code)
+    assert expected in hint, hint
+    assert "Check that condition, or move the line out of the `if`" in hint
+
+
+def test_every_line_that_changes_the_variable_must_be_skipped(shell):
+    hint = stuck_hint(shell, "i, m = 0, 'a'\nwhile i < 9:\n    if m == 'b':\n        i += 1\n"
+                             "    if m == 'c':\n        i += 2\n")
+    assert hint.startswith("Line 4 (`i += 1`)") and "The other lines that change it are skipped" in hint
+
+
+@pytest.mark.parametrize("code", [
+    "i, y = 0, 5\nwhile i < 10:\n    if y > 3:\n        i += 0\n",  # the if runs; the update does nothing
+    "i, y = 0, 2\nwhile i < 10:\n    t = y\n    if t > 3:\n        i += 1\n",  # t is set earlier in the round
+    "i, y = 0, 2\nwhile i < 10:\n    i = i\n    if y > 3:\n        i += 1\n",  # also changed outside the if
+    "i, y = 0, 2\nwhile i < 10:\n    if y > 3:\n        for _ in range(1):\n            i += 1\n",  # in a loop
+    "i, y = 0, 2\nwhile i < 10:\n    if y > 3:\n        i += 1\n    else:\n        i += 0\n",  # else runs
+    "i, y = 0, 2\nwhile i < 10:\n    if y.real > 3:\n        i += 1\n",  # attributes are not worked out
+])
+def test_no_branch_hint_unless_the_branch_surely_never_runs(shell, code):
+    assert "never runs" not in stuck_hint(shell, code)
+
+
+def test_no_branch_updates_when_the_loop_calls_user_code():
+    found = facts("i = 0\nwhile i < 9:\n    if ok():\n        i += 1\n")
+    assert not found or not found[2].branch_updates
+    assert not facts("i = 0\nwhile i < 9:\n    bump()\n    if y:\n        i += 1\n")
+
+
+def test_conditions_are_only_worked_out_on_built_in_values():
+    class Sneaky:
+        def __gt__(self, other):
+            raise AssertionError("user code ran")
+
+    assert loop_notes._evaluate("y > 3", {"y": Sneaky()}) is None
+    assert loop_notes._evaluate("y > 3", {}) is None  # not watched
+    assert loop_notes._evaluate("y[5] > 3", {"y": [1]}) is None  # the error is caught
+    assert loop_notes._evaluate("len(s) == 2 and s[0] == 'a'", {"s": "ab"}) is True
+    assert not loop_notes._evaluable(ast.parse("f(y) > 3", mode="eval").body)
+    assert not loop_notes._evaluable(ast.parse("(z := y) > 3", mode="eval").body)
+
+
+def test_branch_hint_needs_the_condition_to_be_false():
+    updates = loop_notes.branch_updates(ast.parse("while i < 9:\n    if y > 3:\n        i += 1\n").body[0])
+    assert [(u.name, u.line) for u in updates] == [("i", 3)]
+    assert loop_notes.branch_hint(updates, {"i": 0, "y": 2}) is not None
+    assert loop_notes.branch_hint(updates, {"i": 0, "y": 7}) is None  # the if would run
