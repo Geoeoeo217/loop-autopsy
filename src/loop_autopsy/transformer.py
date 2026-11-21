@@ -227,6 +227,7 @@ class LoopTransformer(ast.NodeTransformer):
             repeat_safe=safe, waits_for_user=waits,
             always_true=always_true(node.test), exits=has_exit(node.body),
             notes=tuple(facts.notes), outside_update=facts.outside_update,
+            branch_updates=tuple(facts.branch_updates),
         )
         return self._instrument(node, info)
 

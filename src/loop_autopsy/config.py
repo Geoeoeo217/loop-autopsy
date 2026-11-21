@@ -57,6 +57,7 @@ class LoopInfo:
     exits: bool = True  # the body has a break, return, raise, assert or exit() that can end the loop
     notes: Tuple[str, ...] = ()  # read from the code (loop_notes.py); shown once when the loop starts
     outside_update: Optional[Tuple[str, int, str]] = None  # (name, line, code): its update sits after the loop
+    branch_updates: Tuple[Any, ...] = ()  # loop_notes.BranchUpdate: its updates sit inside an if
 
 
 @dataclass
