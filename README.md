@@ -106,7 +106,7 @@ empties; such a loop gets the time limit instead.
 A `while True:` loop with no `break`, `return`, `raise` or `exit()` inside gets
 a one-line note as soon as it starts, because it can only end with an error.
 
-Three more mistakes are read straight from the code:
+Four more mistakes are read straight from the code:
 
 - **Update line after the loop.** When the line right after a `while` loop
   changes a variable of its condition and nothing inside the loop does, the
@@ -114,6 +114,15 @@ Three more mistakes are read straight from the code:
   `Line 4 (count += 1) changes count, but it comes after the loop`. The hint
   is left out when the loop has a `break`, `return` or `raise`, or calls a
   function of your own that could change the variable.
+- **Update line inside an `if` that never runs.** When a stuck loop's only
+  update sits inside an `if` whose condition is False every round, the hint
+  names both: `Line 4 (i += 1) changes i, but it never runs: it is inside
+  if y > 3: (line 3), and y > 3 is False every round (y = 2 never changes)`.
+  The same goes for an update in an `else` or `elif` part that is always
+  skipped. The condition is only worked out when it uses plain variables,
+  numbers, comparisons and a few built-ins such as `len()`, and only reads
+  values nothing earlier in the round changes. Otherwise the usual hint is
+  kept.
 - **Endless iterator.** A `for` loop over `itertools.count()`,
   `itertools.cycle(...)` or `itertools.repeat(x)` with no `break`, `return` or
   `raise` gets a note on its first round, since it can only end with an error.

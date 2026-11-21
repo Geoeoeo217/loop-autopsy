@@ -11,6 +11,10 @@ Version numbers follow [Semantic Versioning](https://semver.org/).
   changes a variable of its condition and nothing inside the loop does, the
   stuck and time-limit reports name that line and ask whether it should be
   indented.
+- Update line inside an `if` that never runs: when a stuck loop's only
+  update sits in an `if` (or `else`/`elif` part) whose condition never lets
+  it run, the hint names that line, the condition and the values that keep
+  it False.
 - A `for` loop over `itertools.count()`, `itertools.cycle(...)` or
   `itertools.repeat(x)` with no `break`, `return` or `raise` gets a note on
   its first round.
@@ -25,7 +29,7 @@ Version numbers follow [Semantic Versioning](https://semver.org/).
 
 ### Development
 
-- `tests/test_false_positives.py`: 26 correct but suspicious-looking loops
+- `tests/test_false_positives.py`: 27 correct but suspicious-looking loops
   that must never be stopped, run with stricter thresholds than the
   defaults, plus broken versions that must still be stopped.
 
