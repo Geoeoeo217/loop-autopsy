@@ -25,7 +25,10 @@ def test_compare_spec_simple_and_complex():
     assert compare_spec(ast.parse("i < 10", mode="eval").body) == (("name", "i"), "<", ("const", 10))
     assert compare_spec(ast.parse("x != -1", mode="eval").body) == (("name", "x"), "!=", ("const", -1))
     assert compare_spec(ast.parse("a < b < c", mode="eval").body) is None
-    assert compare_spec(ast.parse("len(s) > 0", mode="eval").body) is None
+    assert compare_spec(ast.parse("len(s) > 0", mode="eval").body) == (("len", "s"), ">", ("const", 0))
+    assert compare_spec(ast.parse("i < len(nums)", mode="eval").body) == (("name", "i"), "<", ("len", "nums"))
+    for not_simple in ("len(s) - 1 > i", "i < len(a.b)", "i < len(s, 2)", "i < max(s)", "i < len(*s)"):
+        assert compare_spec(ast.parse(not_simple, mode="eval").body) is None, not_simple
 
 
 def test_classify_calls():

@@ -18,6 +18,16 @@ Version numbers follow [Semantic Versioning](https://semver.org/).
   note when the loop starts: inside, it swallows ■; around, it hides a
   stopped loop's report.
 - New module `loop_notes.py` holds these checks.
+- "Wrong direction" and "jumped over" also work for a condition with
+  `len(name)`, such as `while i < len(nums):`, as long as the length stays
+  the same. A length that changes is left alone, since a queue can grow for
+  a long time before it empties.
+
+### Development
+
+- `tests/test_false_positives.py`: 26 correct but suspicious-looking loops
+  that must never be stopped, run with stricter thresholds than the
+  defaults, plus broken versions that must still be stopped.
 
 ## 0.3.0 (2026-11-20)
 

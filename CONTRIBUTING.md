@@ -8,7 +8,7 @@ else's module, open an issue or ask them first.
 | Member | Files |
 |---|---|
 | NATHANAEL George Steindhart | `pyproject.toml`, `README.md`, `CHANGELOG.md`, `CONTRIBUTING.md`, `config.py`, `transformer.py`, `monitor.py`, `magics.py`, `__init__.py`, `examples/demo.ipynb`, `tests/test_config.py`, `tests/test_transformer.py`, `tests/test_end_to_end.py` |
-| SETIAWAN Matthew Henson | `detectors.py`, `recursion.py`, `loop_notes.py`, `tests/test_detectors.py`, `tests/test_recursion.py`, `tests/test_loop_notes.py` |
+| SETIAWAN Matthew Henson | `detectors.py`, `recursion.py`, `loop_notes.py`, `tests/test_detectors.py`, `tests/test_recursion.py`, `tests/test_loop_notes.py`, `tests/test_false_positives.py` |
 | LATHIF Muhammad Akmal | `growth.py`, `THIRD_PARTY_LICENSES.md`, `tests/test_growth.py`, `tests/test_memory_overview.py`, `tests/test_license.py` |
 | KWAN Kendrick Matthew | `report.py`, `report_i18n.py`, `report_theme.py`, `report_accessibility.py`, `report_export.py`, `report_metrics.py`, `sparkline.py`, and their tests (`tests/test_report*.py`, `tests/test_sparkline.py`) |
 | HANDAYA Clement Steward | `heatmap.py`, `.github/workflows/tests.yml`, `benchmarks/`, `examples/refresh_demo.py`, `tests/test_heatmap.py`, `tests/test_magics.py`, `tests/test_monitor.py`, `tests/test_docs.py`, `tests/test_real_kernel.py`, `tests/test_slow_and_endless.py` |

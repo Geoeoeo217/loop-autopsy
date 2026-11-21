@@ -97,6 +97,12 @@ happens when the loop has no `break`, `return` or `raise`: a search that may end
 early is given the full time limit. A loop stopped by the time limit also shows
 how far it got, when its length is known.
 
+"Wrong direction" and "jumped over" also work when the condition compares with
+the length of a list, string, tuple, dict or set, as in `while i < len(nums):`.
+They are reported only when the length stays the same. A list that keeps
+growing is no proof, because a queue often grows for a long time before it
+empties; such a loop gets the time limit instead.
+
 A `while True:` loop with no `break`, `return`, `raise` or `exit()` inside gets
 a one-line note as soon as it starts, because it can only end with an error.
 
@@ -323,6 +329,11 @@ pytest
 
 The tests also run on GitHub for every push and pull request, on Python 3.9 to
 3.13 (Linux) and on Windows and macOS: see `.github/workflows/tests.yml`.
+
+`tests/test_false_positives.py` runs correct loops that look suspicious (a binary
+search, Collatz, a queue that grows before it empties) with the rules made
+stricter than usual, and checks that none of them is stopped. When you change a
+rule, add the correct loops it could get wrong.
 
 Some tests start a real Jupyter kernel and run notebook cells in it, including
 the whole demo notebook, because a notebook shows output differently from a

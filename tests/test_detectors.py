@@ -289,6 +289,63 @@ def test_jumped_over_names_both_variables_when_both_move():
     assert "land on the same value" in finding.hint
 
 
+def with_length(test_src, compare, readings, **settings):
+    """Run a condition that uses ``len(nums)`` through the rule; ``readings`` are (i, nums) pairs."""
+    cfg = Settings(**settings)
+    state = make_state(test_src=test_src, cond_names=("i", "nums"), watched=("i", "nums"), compare=compare)
+    finding = None
+    for i, nums in readings:
+        finding = finding or step(state, lambda info, st, v: check_direction(info, st, v, cfg),
+                                  {"i": i, "nums": nums})
+    return finding
+
+
+I_BELOW_LEN = (("name", "i"), "<", ("len", "nums"))
+
+
+def test_wrong_direction_against_the_length_of_a_list():
+    nums = [1, 2, 3, 4, 5]
+    finding = with_length("i < len(nums)", I_BELOW_LEN, [(-k, nums) for k in range(30)], direction_after=10)
+    assert finding.kind == "wrong_direction" and finding.culprits == ("i",)
+    assert "needs `i` to reach `len(nums)` (5)" in finding.explanation
+    assert "`i` went from 0 to -10" in finding.explanation and "`+=` instead of `-=`" in finding.hint
+
+
+def test_wrong_direction_when_the_length_is_on_the_left():
+    finding = with_length("len(nums) > i", (("len", "nums"), ">", ("name", "i")),
+                          [(-k, "abc") for k in range(30)], direction_after=10)
+    assert finding.culprits == ("i",) and "needs `i` to reach `len(nums)` (3)" in finding.explanation
+
+
+def test_jumped_over_the_length_of_a_list():
+    finding = with_length("i != len(nums)", (("name", "i"), "!=", ("len", "nums")),
+                          [(3 * k, (1,) * 10) for k in range(30)], jump_after=10)
+    assert finding.kind == "jumped_over" and finding.culprits == ("i",)
+    assert "when `i` is exactly `len(nums)` (10)" in finding.explanation
+
+
+def test_a_list_that_grows_away_is_not_proof():
+    # A queue can grow for a long time before it empties (breadth-first search),
+    # so a length that moves away from its target is never reported.
+    growing = [(0, list(range(k))) for k in range(1, 60)]
+    assert with_length("len(nums) > i", (("len", "nums"), ">", ("name", "i")), growing,
+                       direction_after=10) is None
+    both = [(-k, list(range(k))) for k in range(60)]
+    assert with_length("i < len(nums)", I_BELOW_LEN, both, direction_after=10) is None
+    jumping = [(10, list(range(3 * k))) for k in range(40)]
+    assert with_length("i != len(nums)", (("name", "i"), "!=", ("len", "nums")), jumping, jump_after=10) is None
+
+
+def test_length_of_values_it_cannot_measure_safely_is_skipped():
+    class Sized:
+        def __len__(self):
+            return 5  # could run any code: not measured
+
+    for nums in (Sized(), 5, None):
+        assert with_length("i < len(nums)", I_BELOW_LEN, [(-k, nums) for k in range(30)],
+                           direction_after=10) is None
+
+
 def test_a_step_in_the_right_direction_resets_the_count():
     state = make_state()  # while x < 5
     zigzag = [0, -1, -2, -3, -2, -3, -4, -5, -4] * 6  # never more than 3 wrong steps in a row

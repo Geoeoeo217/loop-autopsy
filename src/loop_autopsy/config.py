@@ -48,7 +48,7 @@ class LoopInfo:
     test_src: str = ""
     cond_names: Tuple[str, ...] = ()
     watched: Tuple[str, ...] = ()
-    compare: Optional[tuple] = None  # (left, op, right); side = ("name", n) | ("const", v)
+    compare: Optional[tuple] = None  # (left, op, right); side = ("name", n) | ("const", v) | ("len", n)
     iter_name: Optional[str] = None
     receivers: Tuple[str, ...] = ()  # names used as ``name.method(...)``; checked at run time
     repeat_safe: bool = True

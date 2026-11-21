@@ -165,6 +165,9 @@ def _side(node: ast.AST):
     if (isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub)
             and isinstance(node.operand, ast.Constant) and isinstance(node.operand.value, (int, float))):
         return ("const", -node.operand.value)
+    if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "len"
+            and len(node.args) == 1 and not node.keywords and isinstance(node.args[0], ast.Name)):
+        return ("len", node.args[0].id)  # while i < len(nums)
     return None
 
 

@@ -195,9 +195,23 @@ def _cycle_finding(info: LoopInfo, values: Dict[str, Any], k: int) -> Finding:
 
 
 # --------------------------------------------------------------------------- R3 / R4
+# Built-in containers whose len() is cheap and cannot run any of the user's code.
+LEN_TYPES = (list, tuple, str, bytes, bytearray, dict, set, frozenset, deque, range)
+
+
 def _side_value(side, values):
     kind, data = side
-    return data if kind == "const" else values.get(data)
+    if kind == "const":
+        return data
+    value = values.get(data)
+    if kind == "len":
+        return len(value) if type(value) in LEN_TYPES else None
+    return value
+
+
+def _label(side) -> str:
+    """How one side of the comparison is named in a report: ``i`` or ``len(nums)``."""
+    return f"len({side[1]})" if side[0] == "len" else str(side[1])
 
 
 def check_direction(info: LoopInfo, state: LoopState, values: Dict[str, Any],
@@ -227,6 +241,8 @@ def check_direction(info: LoopInfo, state: LoopState, values: Dict[str, Any],
         if s.get("jump_crossed") and s.get("jump_streak", 0) >= settings.jump_after:
             before, after = s["jump_crossed"]
             moved = _moved(sides, before, after)
+            if _length_moved(sides, moved):
+                return None
             if len(moved) == 2:
                 first, second = left[1], right[1]
                 return Finding(
@@ -240,7 +256,7 @@ def check_direction(info: LoopInfo, state: LoopState, values: Dict[str, Any],
                     (first, second),
                 )
             i = moved[0]
-            var, target = sides[i][1], _other_side(sides[1 - i], now[1 - i])
+            var, target = _label(sides[i]), _other_side(sides[1 - i], now[1 - i])
             return Finding(
                 "jumped_over", "loop jumped over its stop value",
                 f"`{info.test_src}` only becomes False when `{var}` is exactly {target}. "
@@ -264,6 +280,8 @@ def check_direction(info: LoopInfo, state: LoopState, values: Dict[str, Any],
     if s.get("dir_streak", 0) >= settings.direction_after:
         start = s["dir_start"]
         moved = _moved(sides, start, now)
+        if _length_moved(sides, moved):
+            return None
         if len(moved) == 2:
             first, second = left[1], right[1]
             return Finding(
@@ -277,7 +295,7 @@ def check_direction(info: LoopInfo, state: LoopState, values: Dict[str, Any],
                 (first, second),
             )
         i = moved[0]
-        var, target = sides[i][1], _other_side(sides[1 - i], now[1 - i])
+        var, target = _label(sides[i]), _other_side(sides[1 - i], now[1 - i])
         fix = "`-=` instead of `+=`" if now[i] > start[i] else "`+=` instead of `-=`"
         return Finding(
             "wrong_direction", "loop moving the wrong way",
@@ -297,15 +315,22 @@ def _moved(sides, before, after):
     Only variables count. ``while lo < hi`` can go wrong because ``lo`` moves,
     because ``hi`` moves, or both, and the report must name the right one.
     """
-    names = [i for i, side in enumerate(sides) if side[0] == "name"]
+    names = [i for i, side in enumerate(sides) if side[0] != "const"]
     changed = [i for i in names if before[i] != after[i]]
     return changed or names[:1]
+
+
+def _length_moved(sides, moved) -> bool:
+    """A ``len(...)`` side that changed is no proof: a work list (a queue, a
+    stack) often grows for a long time before it empties. Only a list whose
+    length stays put is a fixed target."""
+    return any(sides[i][0] == "len" for i in moved)
 
 
 def _other_side(side, value) -> str:
     """How the side a variable is compared with is shown: its value, with its
     name in front when it is a variable too."""
-    return _show(value) if side[0] == "const" else f"`{side[1]}` ({_show(value)})"
+    return _show(value) if side[0] == "const" else f"`{_label(side)}` ({_show(value)})"
 
 
 # --------------------------------------------------------------------------- R8
