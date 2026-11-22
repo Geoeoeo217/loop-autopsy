@@ -57,3 +57,27 @@ def test_empty_cycle_is_not_called_endless(shell):
 def test_non_empty_cycle_is_still_stopped_before_it_starts(shell):
     result = run(shell, "import itertools\nxs = list(itertools.cycle('ab'))")
     assert result.error_in_exec is not None and result.error_in_exec.finding.kind == "endless"
+
+
+def test_watchdog_leaves_a_suspended_async_loop_alone(monkeypatch):
+    """A background asyncio task waiting in `await` is not stuck; interrupting the main
+    thread would stop an unrelated cell instead (it did: a plain time.sleep cell)."""
+    import signal
+
+    from conftest import make_state
+    from loop_autopsy.config import Settings
+    from loop_autopsy.monitor import Monitor
+
+    sent = []
+    monkeypatch.setattr(signal, "pthread_kill", lambda *a: sent.append(a), raising=False)
+    monkeypatch.setattr(signal, "raise_signal", lambda *a: sent.append(a))
+    monkeypatch.setattr(signal, "getsignal", lambda sig: signal.default_int_handler)
+    for suspends, expected in ((True, 0), (False, 1)):
+        sent.clear()
+        monitor = Monitor(None, Settings(time_limit=1))
+        loop_id = monitor.register(make_state(suspends=suspends).info)
+        monitor.begin(loop_id)
+        t0 = monitor.states[loop_id].started
+        monitor.watchdog_tick(now=t0 + 5)
+        monitor.watchdog_tick(now=t0 + 10)
+        assert len(sent) == expected

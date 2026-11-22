@@ -679,8 +679,13 @@ class Monitor:
         if not self.enabled or settings.time_limit <= 0 or self._pending_stop is not None or self._waiting:
             return None
         main = threading.main_thread().ident
+        # A loop with ``await`` runs on the main thread too, but while it waits it is
+        # suspended, not stuck, and the main thread is busy with something else (another
+        # cell, another task): interrupting would stop that instead. Its own time limit is
+        # still checked at the start of each round.
         running = [state for stack in list(self.stacks.values()) for state in list(stack)
-                   if state.scratch.get("thread") == main and state.stopped is None]
+                   if state.scratch.get("thread") == main and state.stopped is None
+                   and not state.info.suspends]
         if not running:
             return None
         state = max(running, key=lambda s: s.started)
