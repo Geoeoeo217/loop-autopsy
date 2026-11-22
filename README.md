@@ -87,8 +87,26 @@ Every rule and its numbers are listed below, and every number can be changed (se
 | **Growing list** in a `for` loop | `for n in nums: nums.append(n)` | 2,000 rounds |
 | **Memory** about to run out | a loop filling a huge list | at 85% of the limit |
 | **Would take too long**: a `for` loop over something with a length, too slow to finish in time | `for row in range(10**9): slow(row)` | 5 s, if it needs at least twice the time limit |
-| **Too long** (fallback) | anything else | 60 s |
+| **Never ends**: a comprehension, or `list()`, `sum()`, `max()`... over an iterator that never runs out | `[x for x in itertools.count()]`, `list(naturals())` | before it starts |
+| **Stuck inside one round**: a round that never finishes | `for url in urls: time.sleep(600)` | the time limit, without waiting for the round to end |
+| **Too long** (fallback) | anything else, including slow comprehensions and `async` loops | 60 s |
 | **Runaway recursion** | `def f(n): return f(n - 2)` | when Python raises `RecursionError` |
+
+What is watched: `while` and `for` loops, `async for` and loops with `await`,
+comprehensions and generator expressions, the iterator given to `list()`,
+`tuple()`, `set()`, `dict()`, `sorted()`, `sum()`, `min()`, `max()`, `any()`,
+`all()`, `deque()` and `", ".join()`, and the loops of a script run with
+`%run`. A loop with `await` (or the same loop in two threads at once) only gets
+the time and memory rules, since other tasks can change its values while it
+waits. A generator expression that a watched loop is using is timed by that loop.
+
+Conditions are followed through plain attributes (`while self.n < 10`,
+`while len(self.items) < 3`), NumPy numbers, `and` and `or`: in
+`a < 10 or b > 0`, one part moving the wrong way keeps the loop going; in
+`i < 10 and not done`, the comparison counts while the other parts stay the
+same. In `0 <= i < n`, moving away from one end is moving towards the other, so
+no direction is reported. An attribute is read without running any code: a
+property is never read, and the loop then gets the time limit.
 
 A `for` loop that "would take too long" is stopped with an estimate ("finished
 1,234 of 10,000,000 rounds; at this speed it needs about 11 hours") instead of a
@@ -129,8 +147,10 @@ Four more mistakes are read straight from the code:
   values nothing earlier in the round changes. Otherwise the usual hint is
   kept.
 - **Endless iterator.** A `for` loop over `itertools.count()`,
-  `itertools.cycle(...)` or `itertools.repeat(x)` with no `break`, `return` or
-  `raise` gets a note on its first round, since it can only end with an error.
+  `itertools.cycle(...)`, `itertools.repeat(x)` or a generator of yours that
+  ends in a `while True:` loop with no way out, with no `break`, `return` or
+  `raise` of its own, gets a note on its first round, since it can only end
+  with an error.
 - **Catch-all `except`.** A bare `except:` or `except BaseException:` also
   catches the stop button ■ and loop-autopsy's stop signal. Inside a loop, the
   note says ■ will only jump to the `except` block. Around a loop, it says a
@@ -222,7 +242,7 @@ c.InteractiveShellApp.extensions = ["loop_autopsy"]
 
 Cells that use `%timeit` / `%%timeit` are never watched, so timings stay accurate.
 Loops inside generators (`yield`) are left alone, because infinite generators are
-normal.
+normal; whatever uses the generator is watched instead.
 
 Try [examples/demo.ipynb](examples/demo.ipynb) for every feature in one notebook.
 
@@ -328,14 +348,25 @@ size such as `2G` or `512M`), then the container's memory limit, then the comput
   prove it; everything else gets the time limit.
 - Loops that call your own functions or modules such as `random` cannot be proven
   stuck (those calls might change hidden state), so they rely on the time limit.
-- Only code typed in notebook cells is watched, not code inside imported modules.
+- Only code typed in notebook cells and scripts run with `%run` is watched, not
+  code inside imported modules, code run with `exec()`, or functions defined
+  before `%load_ext loop_autopsy`.
+- Work done inside C code cannot be interrupted: a regular expression that
+  backtracks for hours, `2 ** 10 ** 10`, or a NumPy call. A round stuck in
+  `time.sleep()`, `input()` or a network call is stopped by a watchdog when the
+  time limit passes (except while waiting for `input()`).
+- A very high `sys.setrecursionlimit(...)` lets a runaway recursion crash the
+  kernel before Python can raise `RecursionError`; on Python 3.11 and older,
+  loop-autopsy warns when the limit is set above 10,000.
 - Watching adds a small cost to each loop round: roughly 0.1–0.3 µs, measured with
-  `benchmarks/overhead.py` on Python 3.12. That is invisible when a round does real
-  work, but a loop that does almost nothing per round (such as `i += 1`) runs
-  about 3 to 10 times slower. Use `%%autopsy off` for heavy number crunching.
-- A bare `except:` around a loop can catch the stop signal, just as it catches ■.
-  loop-autopsy points this out with a note when the loop starts, but it does
-  not change how your `except` behaves.
+  `benchmarks/overhead.py` on Python 3.12, and about 0.07 µs per item of a
+  comprehension. That is invisible when a round does real work, but a loop that
+  does almost nothing per round (such as `i += 1`) runs about 3 to 10 times
+  slower. Use `%%autopsy off` for heavy number crunching.
+- A bare `except:` around a loop can catch the stop signal, just as it catches ■,
+  and so can `with suppress(BaseException):` or a `break`, `continue` or
+  `return` inside a `finally:` block. loop-autopsy points this out with a note
+  when the loop starts, but it does not change how your code behaves.
 - Runaway recursion is explained only for functions typed in notebook cells, and
   only when the `RecursionError` reaches the top of the cell. A `RecursionError`
   your own code catches is left alone.

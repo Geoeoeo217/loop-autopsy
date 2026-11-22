@@ -5,6 +5,33 @@ Version numbers follow [Semantic Versioning](https://semver.org/).
 
 ## Unreleased
 
+### Added
+
+- Comprehensions and generator expressions are watched: they get the time
+  limit and the memory check, and a list/set/dict comprehension over an
+  iterator that never runs out is stopped before it starts.
+- `list()`, `tuple()`, `set()`, `frozenset()`, `dict()`, `sorted()`,
+  `sum()`, `min()`, `max()`, `deque()` and `", ".join()` over an endless
+  iterator are stopped before they start; over any other iterator (and in
+  `any()` / `all()`) they get the time limit and the memory check, although
+  they loop in C.
+- `async for` loops and loops with `await` are watched for time and memory.
+- Loops in scripts run with `%run` are watched.
+- A watchdog stops a loop whose current round never ends (`time.sleep`, a
+  network call without a timeout) once the time limit has passed, instead of
+  waiting for the next round. It does not count time waiting in `input()`.
+- Conditions on plain attributes (`self.n < 10`, `len(self.items) < 3`),
+  with NumPy numbers, and with `and` / `or` get the stuck, cycle,
+  wrong-direction and jumped-over rules. Attributes are read without running
+  any code, so properties are never read.
+- "Growing list" also works for `for i, x in enumerate(nums)` and
+  `for x in self.items`.
+- A generator function that ends in a `while True:` loop with no way out
+  counts as an endless iterator, for the notes and for the new stops.
+- Notes for a `break`, `continue` or `return` inside a `finally:` block and
+  for `with suppress(BaseException):`, which swallow the stop like a bare
+  `except:`, and (Python 3.11 and older) for a recursion limit above 10,000.
+
 ### Fixed
 
 - A loop inside a function whose condition uses a global (`while
@@ -65,6 +92,10 @@ Version numbers follow [Semantic Versioning](https://semver.org/).
   handler: exception types it does not handle are passed on to it.
 - `%autopsy memory` no longer calls `memory_usage()` on objects that are not
   pandas (a Dask DataFrame would compute itself just to be measured).
+- A note printed to a console that cannot show ■ (a Windows terminal)
+  raised `UnicodeEncodeError` and broke the cell.
+- A comprehension's own variable in a loop condition
+  (`while any(v > 0 for v in vals)`) switched the stuck rule off.
 - `docs/extras.md` imported the extras from their old place; the examples
   now use `loop_autopsy.extras.*`, and the docs say that the built-in
   reports do not use them.

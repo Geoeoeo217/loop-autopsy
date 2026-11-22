@@ -62,7 +62,9 @@ def errors(cell):
 
 CELLS = {
     "load": "%load_ext loop_autopsy",
-    "config": "%autopsy config max_displays=5 max_output_lines=20",
+    # heatmap=off: on a slow computer "auto" adds a health bar to slow cells, which the
+    # tests below would count as output; the "bar" cells test the bar itself.
+    "config": "%autopsy config max_displays=5 max_output_lines=20 heatmap=off",
     "stuck": "count = 1\nwhile count <= 5:\n    print(count)",
     "display_flood_then_stuck": ("from IPython.display import display\nfor i in range(50):\n    display(i)\n"
                                  "k = 1\nwhile k <= 5:\n    pass"),
@@ -97,8 +99,9 @@ def test_extension_loads_in_a_kernel(session):
 def test_stuck_loop_report_is_html(session):
     cell = session["stuck"]
     assert not errors(cell)  # a stopped loop is not shown as a Python error
-    report = displays(cell)[-1].data
-    assert "text/html" in report and "border-left:4px solid" in report["text/html"]
+    # The report, wherever it is: on a slow computer the health bar comes after it.
+    html = [d.data.get("text/html", "") for d in displays(cell)]
+    assert any("border-left:4px solid" in h for h in html)
     assert "Loop autopsy — stuck loop (line 2)" in text_of(cell)
 
 
@@ -194,3 +197,22 @@ def test_demo_broken_loops_each_get_a_report(demo):
     for cell in demo:
         if re.match(r"(count|i|x|a|nums) = ", cell.source) or cell.source.startswith("def countdown"):
             assert "Loop autopsy" in text_of(cell), cell.source
+
+
+def test_new_kinds_of_loops_in_a_kernel():
+    """A round stuck in time.sleep, a loop with await and an endless comprehension, in
+    a real kernel: each gets its report, and the kernel carries on afterwards."""
+    cells = {
+        "load": "%load_ext loop_autopsy\n%autopsy config time_limit=1",
+        "sleepy": "import time\nfor i in range(3):\n    time.sleep(10)",
+        "await_loop": "import asyncio, time\nt0 = time.time()\nwhile time.time() - t0 < 5:\n    await asyncio.sleep(0.01)",
+        "comprehension": "import itertools\nxs = [x for x in itertools.count()]",
+        "after": "print('still running')",
+    }
+    nb = nbformat.v4.new_notebook(cells=[nbformat.v4.new_code_cell(src) for src in cells.values()])
+    run_notebook(nb)
+    ran = dict(zip(cells, nb.cells))
+    assert "loop stuck inside one round" in text_of(ran["sleepy"])
+    assert "loop ran too long" in text_of(ran["await_loop"]) and not errors(ran["await_loop"])
+    assert "never runs out" in text_of(ran["comprehension"]) and not errors(ran["comprehension"])
+    assert "still running" in stream(ran["after"], "stdout")

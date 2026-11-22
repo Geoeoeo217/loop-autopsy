@@ -8,7 +8,9 @@ Private bookkeeping lives in ``state.scratch``.
 from __future__ import annotations
 
 import math
+import numbers
 from collections import deque
+from dataclasses import replace
 from decimal import Decimal
 from fractions import Fraction
 from typing import Any, Dict, Optional
@@ -100,7 +102,7 @@ def _show(value: Any, width: int = 40) -> str:
 
 
 def _numeric(x: Any) -> bool:
-    return isinstance(x, (int, float, Fraction, Decimal)) and not isinstance(x, bool)
+    return isinstance(x, (numbers.Real, Decimal)) and not isinstance(x, bool)
 
 
 # --------------------------------------------------------------------------- R1 / R2
@@ -277,10 +279,46 @@ def check_direction(info: LoopInfo, state: LoopState, values: Dict[str, Any],
     Moving away from the stop value only counts while it does not slow down:
     a loop whose steps shrink (a thrown ball, a decaying simulation) may still
     turn round and end.
+
+    In ``a < 10 or b > 0`` each part is followed on its own: the loop goes on
+    while any part is True, so one part moving the wrong way keeps it going.
+    In ``i < 10 and not done`` the comparison counts only while the variables
+    of the other parts stay the same (see ``transformer.and_spec``).
     """
-    if info.kind != "while" or not info.compare:
+    if info.kind != "while":
         return None
-    left, op, right = info.compare
+    if info.compare:
+        return _check_spec(state, values, settings, info.compare, info.test_src, "")
+    for k, (spec, src) in enumerate(info.compare_or):
+        finding = _check_spec(state, values, settings, spec, src, f"or{k}_")
+        if finding is not None:
+            return _part_of(finding, f" The loop goes on while any part of `{info.test_src}` is True, "
+                                     f"so this part alone keeps it going.")
+    if info.compare_and is not None:
+        guard = tuple(full_fp(values[n]) if n in values else OPAQUE for n in info.and_guard)
+        s = state.scratch
+        if any(fp is OPAQUE for fp in guard):
+            return None  # the other parts cannot be followed: no proof
+        if s.get("and_guard") != guard:  # the other parts changed: start counting again
+            s["and_guard"], s["and_dir_streak"], s["and_jump_streak"] = guard, 0, 0
+        spec, src = info.compare_and
+        finding = _check_spec(state, values, settings, spec, src, "and_")
+        if finding is not None:
+            return _part_of(finding, f" The other parts of `{info.test_src}` did not change in that time, "
+                                     f"so they cannot end the loop either.")
+    return None
+
+
+def _part_of(finding: Finding, sentence: str) -> Finding:
+    return replace(finding, explanation=finding.explanation + sentence)
+
+
+def _check_spec(state: LoopState, values: Dict[str, Any], settings: Settings,
+                spec: tuple, src: str, p: str) -> Optional[Finding]:
+    """R3 and R4 for one comparison ``spec`` (source text ``src``). ``p`` prefixes
+    this comparison's keys in ``state.scratch``, so the parts of an ``or`` are
+    followed separately."""
+    left, op, right = spec
     a, b = _side_value(left, values), _side_value(right, values)
     if not (_numeric(a) and _numeric(b)):
         return None
@@ -291,18 +329,18 @@ def check_direction(info: LoopInfo, state: LoopState, values: Dict[str, Any],
 
     if op == "!=":
         gap = gb - ga
-        prev = s.get("jump_prev")
-        away = _moving_away(s, "jump_", abs(gap), state.rounds)
+        prev = s.get(p + "jump_prev")
+        away = _moving_away(s, p + "jump_", abs(gap), state.rounds)
         if prev is not None and (prev > 0) != (gap > 0):
-            s["jump_crossed"] = (s.get("jump_prev_val"), now)
-            s["jump_streak"] = 0
-        elif s.get("jump_crossed") and prev is not None and away:
-            s["jump_streak"] = s.get("jump_streak", 0) + 1
-        elif s.get("jump_crossed"):
-            s["jump_streak"] = 0
-        s["jump_prev"], s["jump_prev_val"] = gap, now
-        if s.get("jump_crossed") and s.get("jump_streak", 0) >= max(1, settings.jump_after):
-            before, after = s["jump_crossed"]
+            s[p + "jump_crossed"] = (s.get(p + "jump_prev_val"), now)
+            s[p + "jump_streak"] = 0
+        elif s.get(p + "jump_crossed") and prev is not None and away:
+            s[p + "jump_streak"] = s.get(p + "jump_streak", 0) + 1
+        elif s.get(p + "jump_crossed"):
+            s[p + "jump_streak"] = 0
+        s[p + "jump_prev"], s[p + "jump_prev_val"] = gap, now
+        if s.get(p + "jump_crossed") and s.get(p + "jump_streak", 0) >= max(1, settings.jump_after):
+            before, after = s[p + "jump_crossed"]
             moved = _moved(sides, before, after)
             if _length_moved(sides, moved):
                 return None
@@ -310,7 +348,7 @@ def check_direction(info: LoopInfo, state: LoopState, values: Dict[str, Any],
                 first, second = left[1], right[1]
                 return Finding(
                     "jumped_over", "loop jumped over its stop value",
-                    f"`{info.test_src}` only becomes False when `{first}` and `{second}` are exactly equal. "
+                    f"`{src}` only becomes False when `{first}` and `{second}` are exactly equal. "
                     f"`{first}` went from {_show(before[0])} to {_show(after[0])} and `{second}` from "
                     f"{_show(before[1])} to {_show(after[1])}, passing each other without ever being equal, "
                     f"and they have moved further apart ever since (now {_show(a)} and {_show(b)}).",
@@ -322,7 +360,7 @@ def check_direction(info: LoopInfo, state: LoopState, values: Dict[str, Any],
             var, target = _label(sides[i]), _other_side(sides[1 - i], now[1 - i])
             return Finding(
                 "jumped_over", "loop jumped over its stop value",
-                f"`{info.test_src}` only becomes False when `{var}` is exactly {target}. "
+                f"`{src}` only becomes False when `{var}` is exactly {target}. "
                 f"`{var}` went from {_show(before[i])} to {_show(after[i])}, jumping over {target}, "
                 f"and has moved further away ever since (now {_show(now[i])}).",
                 f"Use `<` or `>` instead of `!=` in the condition, or change the step so `{var}` "
@@ -332,15 +370,15 @@ def check_direction(info: LoopInfo, state: LoopState, values: Dict[str, Any],
         return None
 
     gap = (gb - ga) if op in ("<", "<=") else (ga - gb)
-    if _moving_away(s, "dir_", gap, state.rounds):
-        if s.get("dir_streak", 0) == 0:
-            s["dir_start"] = s.get("dir_prev_val")
-        s["dir_streak"] = s.get("dir_streak", 0) + 1
+    if _moving_away(s, p + "dir_", gap, state.rounds):
+        if s.get(p + "dir_streak", 0) == 0:
+            s[p + "dir_start"] = s.get(p + "dir_prev_val")
+        s[p + "dir_streak"] = s.get(p + "dir_streak", 0) + 1
     else:
-        s["dir_streak"] = 0
-    s["dir_prev_val"] = now
-    if s.get("dir_streak", 0) >= max(1, settings.direction_after):
-        start = s["dir_start"]
+        s[p + "dir_streak"] = 0
+    s[p + "dir_prev_val"] = now
+    if s.get(p + "dir_streak", 0) >= max(1, settings.direction_after):
+        start = s[p + "dir_start"]
         moved = _moved(sides, start, now)
         if _length_moved(sides, moved):
             return None
@@ -348,8 +386,8 @@ def check_direction(info: LoopInfo, state: LoopState, values: Dict[str, Any],
             first, second = left[1], right[1]
             return Finding(
                 "wrong_direction", "loop moving the wrong way",
-                f"The loop stops when `{info.test_src}` becomes False, which needs `{first}` and `{second}` "
-                f"to meet. But over the last {s['dir_streak']:,} checks they moved further apart every time: "
+                f"The loop stops when `{src}` becomes False, which needs `{first}` and `{second}` "
+                f"to meet. But over the last {s[p + 'dir_streak']:,} checks they moved further apart every time: "
                 f"`{first}` went from {_show(start[0])} to {_show(a)} and `{second}` from {_show(start[1])} "
                 f"to {_show(b)}.",
                 f"Check the lines that update `{first}` and `{second}`: at least one of them should go "
@@ -361,8 +399,8 @@ def check_direction(info: LoopInfo, state: LoopState, values: Dict[str, Any],
         fix = "`-=` instead of `+=`" if now[i] > start[i] else "`+=` instead of `-=`"
         return Finding(
             "wrong_direction", "loop moving the wrong way",
-            f"The loop stops when `{info.test_src}` becomes False, which needs `{var}` to reach {target}. "
-            f"But over the last {s['dir_streak']:,} checks `{var}` went from {_show(start[i])} "
+            f"The loop stops when `{src}` becomes False, which needs `{var}` to reach {target}. "
+            f"But over the last {s[p + 'dir_streak']:,} checks `{var}` went from {_show(start[i])} "
             f"to {_show(now[i])}, moving further away from {target} every time.",
             f"Check the line that updates `{var}`: should it go the other way (for example {fix})?",
             (var,),
@@ -445,7 +483,7 @@ def check_estimate(info: LoopInfo, state: LoopState, settings: Settings, now: fl
     can end early (a ``break``, ``return`` or ``raise``) are left to the time
     limit: a search loop may well finish long before its last item.
     """
-    if (info.kind != "for" or info.exits or info.waits_for_user
+    if (info.kind not in ("for", "comprehension") or info.exits or info.waits_for_user
             or settings.time_limit <= 0 or settings.estimate_after <= 0):
         return None
     progress = _progress(state)
@@ -506,9 +544,48 @@ def check_time(info: LoopInfo, state: LoopState, settings: Settings, now: float)
             f"To allow longer loops: `%autopsy config time_limit={int(settings.time_limit * 5)}`.")
     if info.outside_update is not None:
         hint = f"{indent_hint(info.outside_update)} {hint}"
+    if info.kind == "comprehension":
+        extra = extra.replace(" rounds", " items")
+        return Finding(
+            "time_limit", "loop ran too long",
+            f"`{info.header}` has been going through items for {elapsed:.0f} s ({state.rounds:,} so far). "
+            f"loop-autopsy cannot see inside it, so it cannot tell whether it is just slow or never ends.{extra}",
+            "Try it on a few items first (for example `data[:100]`). If it goes through an iterator that never "
+            "runs out, take only what you need with `itertools.islice(...)`. To allow longer: "
+            f"`%autopsy config time_limit={int(settings.time_limit * 5)}`.",
+        )
     return Finding(
         "time_limit", "loop ran too long",
         f"This loop has been running for {elapsed:.0f} s ({state.rounds:,} rounds). loop-autopsy could not prove "
         f"that it is stuck{reason}. It might just be slow, or stuck in a way the rules cannot see.{extra}",
         hint,
+    )
+
+
+def endless_finding(info: LoopInfo, kind: str) -> Finding:
+    """A list/set/dict comprehension, or list(), sum() and the like, over an iterator
+    that never runs out: it can only end with an error, usually out of memory."""
+    return Finding(
+        "endless", "never ends: its iterator never runs out",
+        f"`{info.header}` (line {info.lineno}) takes every item of `{kind}`, which never runs out, and it "
+        f"cannot stop early, so it would run until the computer runs out of memory. loop-autopsy stopped "
+        f"it before it started.",
+        "Take only the items you need, for example `list(itertools.islice(it, 100))` or "
+        "`[x for _, x in zip(range(100), it)]`, or use a `for` loop with a `break`.",
+    )
+
+
+def blocked_finding(info: LoopInfo, elapsed: float, quiet: float, settings: Settings) -> Finding:
+    """The watchdog's report: the time limit passed while one round never ended."""
+    return Finding(
+        "time_limit", "loop stuck inside one round",
+        f"This loop has been running for {elapsed:.0f} s, and for the last {quiet:.0f} s it has not got to "
+        f"the end of a round: it is waiting or working inside one step, for example `time.sleep(...)`, "
+        f"a network request with no timeout, waiting on a queue, or a long calculation in a function. "
+        f"loop-autopsy stopped it at the {settings.time_limit:.0f} s time limit instead of waiting for that "
+        f"step to finish.",
+        "The traceback above ends in the slow step; it says KeyboardInterrupt because loop-autopsy stopped "
+        "the loop the way the stop button does. Give network calls a timeout, for example "
+        "`requests.get(url, timeout=10)`, and queues one too (`q.get(timeout=5)`). To allow longer: "
+        f"`%autopsy config time_limit={int(settings.time_limit * 5)}`.",
     )

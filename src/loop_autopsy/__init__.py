@@ -38,6 +38,9 @@ def load_ipython_extension(ip) -> None:
     health.register()
     monitor.install_exception_handler()
     monitor.time_waits()
+    monitor.guard_recursion_limit()
+    monitor.watch_scripts(transformer)  # %run script.py
+    monitor.start_watchdog()
     ip.register_magics(AutopsyMagics(ip, monitor, health))
     _LOADED[id(ip)] = (monitor, transformer, health)
     print(f"loop-autopsy {__version__} is watching your loops. Type %autopsy help for options.")
@@ -58,3 +61,6 @@ def unload_ipython_extension(ip) -> None:
     health.unregister()
     monitor.remove_exception_handler()
     monitor.untime_waits()
+    monitor.unguard_recursion_limit()
+    monitor.unwatch_scripts()
+    monitor.stop_watchdog()

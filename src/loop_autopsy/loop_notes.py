@@ -9,7 +9,12 @@ Four common beginner mistakes are spotted here:
 - a ``for`` loop over an iterator that never runs out (``itertools.count()``,
   ``itertools.cycle(...)``, ``itertools.repeat(x)``) with no way out;
 - a bare ``except:`` (or ``except BaseException:``) that also catches the stop
-  button and loop-autopsy's own stop signal.
+  button and loop-autopsy's own stop signal, and the same hidden in
+  ``with suppress(BaseException):`` or in a ``break``, ``continue`` or
+  ``return`` inside a ``finally:`` block (which throws away any error).
+
+A generator function whose body ends in a ``while True:`` loop with no way
+out also counts as an iterator that never runs out.
 
 ``analyse`` reads a whole cell once, before the loops are rewritten, and the
 transformer copies what it found into each loop's ``LoopInfo``. Nothing here
@@ -20,12 +25,15 @@ Owner: SETIAWAN Matthew Henson.
 from __future__ import annotations
 
 import ast
+import inspect
 import itertools
+import textwrap
+import types
 from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 _SCOPES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)
-_WATCHED_LOOPS = (ast.While, ast.For)
+_WATCHED_LOOPS = (ast.While, ast.For, ast.AsyncFor)
 
 
 @dataclass
@@ -61,6 +69,9 @@ def _visit_block(stmts: List[ast.stmt], loop: Optional[ast.AST], found: Dict[int
                 _facts(found, stmt).branch_updates = hidden
         if isinstance(stmt, ast.Try) or type(stmt).__name__ == "TryStar":
             _note_catch_all(stmt, loop, found)
+            _note_finally(stmt, loop, found)
+        if isinstance(stmt, (ast.With, ast.AsyncWith)):
+            _note_suppress(stmt, loop, found)
 
         if isinstance(stmt, _SCOPES):
             _visit_block(stmt.body, None, found)  # a function body runs when called, not here
@@ -393,7 +404,46 @@ def endless_iterable(obj: Any) -> Optional[str]:
             obj.__length_hint__()  # repeat(x, n) knows its length; repeat(x) raises TypeError
         except TypeError:
             return "itertools.repeat"
+    if isinstance(obj, types.GeneratorType) and obj.gi_frame is not None:  # not finished yet
+        name = endless_generator(obj.gi_code)
+        if name:
+            return f"{name}()"
     return None
+
+
+_GENERATORS: Dict[Any, Optional[str]] = {}  # code object -> its name if endless, else None
+
+
+def endless_generator(code: types.CodeType) -> Optional[str]:
+    """The name of a generator function that can never finish, or ``None``: its body
+    reaches a ``while True:`` loop that yields and has no ``break``, ``return`` or
+    ``raise``, with nothing before it that could return. Read from its source, which
+    IPython keeps for functions typed in a cell."""
+    if code in _GENERATORS:
+        return _GENERATORS[code]
+    name = None
+    try:
+        tree = ast.parse(textwrap.dedent(inspect.getsource(code)))
+        func = tree.body[0] if tree.body else None
+        if isinstance(func, ast.FunctionDef) and func.name == code.co_name and _never_finishes(func.body):
+            name = code.co_name
+    except Exception:  # no source (typed elsewhere, or a C extension): no claim
+        name = None
+    if len(_GENERATORS) < 512:
+        _GENERATORS[code] = name
+    return name
+
+
+def _never_finishes(body: List[ast.stmt]) -> bool:
+    from .transformer import always_true, has_exit
+
+    for stmt in body:
+        if (isinstance(stmt, ast.While) and always_true(stmt.test) and not has_exit(stmt.body)
+                and any(isinstance(n, (ast.Yield, ast.YieldFrom)) for n in _walk(stmt.body))):
+            return True
+        if has_exit([stmt]):
+            return False  # a return before the endless loop may end it first
+    return False
 
 
 def endless_iterator_note(header: str, lineno: int, kind: str, time_limit: float) -> str:
@@ -432,6 +482,74 @@ def _first_loop(stmts: List[ast.stmt]) -> Optional[ast.AST]:
             if found is not None:
                 return found
     return None
+
+
+def _swallowing_jump(stmt: Any) -> Optional[Tuple[str, int]]:
+    """``("continue", line)`` when the ``finally:`` block of ``stmt`` has a ``break``,
+    ``continue`` or ``return`` of its own: leaving a ``finally:`` that way throws
+    away the error that was on its way out, whatever it was."""
+    stack = [(node, True) for node in getattr(stmt, "finalbody", [])]
+    while stack:
+        node, own = stack.pop()
+        if isinstance(node, _SCOPES):
+            continue
+        if isinstance(node, ast.Return) or (own and isinstance(node, (ast.Break, ast.Continue))):
+            return {ast.Return: "return", ast.Break: "break", ast.Continue: "continue"}[type(node)], node.lineno
+        if isinstance(node, _WATCHED_LOOPS):
+            stack.extend((child, False) for child in node.body)  # its break belongs to that loop
+            stack.extend((child, own) for child in node.orelse)
+            continue
+        stack.extend((child, own) for child in ast.iter_child_nodes(node))
+    return None
+
+
+def _note_finally(stmt: Any, loop: Optional[ast.AST], found: Dict[int, LoopFacts]) -> None:
+    jump = _swallowing_jump(stmt)
+    if jump is None:
+        return
+    word, line = jump
+    if loop is not None:
+        _facts(found, loop).notes.append(
+            f"[loop-autopsy] Note: the `{word}` on line {line} is inside a `finally:` block, which throws away "
+            f"any error that reaches it, including the stop button ■ and loop-autopsy's stop, so the loop "
+            f"carries on. Move the `{word}` out of the `finally:` block, after the `try` statement.")
+        return
+    target = _first_loop(stmt.body)
+    if target is not None:
+        _facts(found, target).notes.append(
+            f"[loop-autopsy] Note: this loop runs inside a `try` whose `finally:` block has a `{word}` "
+            f"(line {line}). That throws away any error, including loop-autopsy's stop, so if the loop is "
+            f"stopped you will not see why. `%autopsy last` shows a report that was hidden this way.")
+
+
+def _suppresses_stop(item: ast.withitem) -> bool:
+    """``suppress(BaseException)`` (or ``contextlib.suppress(...)`` with it among the types)."""
+    call = item.context_expr
+    if not isinstance(call, ast.Call):
+        return False
+    func = call.func
+    named = (isinstance(func, ast.Name) and func.id == "suppress") or (
+        isinstance(func, ast.Attribute) and func.attr == "suppress")
+    return named and any(isinstance(a, ast.Name) and a.id == "BaseException" for a in call.args)
+
+
+def _note_suppress(stmt: Any, loop: Optional[ast.AST], found: Dict[int, LoopFacts]) -> None:
+    for item in stmt.items:
+        if not _suppresses_stop(item):
+            continue
+        code = _src(item.context_expr, 40)
+        if loop is not None:
+            _facts(found, loop).notes.append(
+                f"[loop-autopsy] Note: `with {code}:` on line {stmt.lineno}, inside this loop, also swallows the "
+                f"stop button ■, so pressing ■ only skips the rest of that block and the loop carries on. "
+                f"Use `suppress(Exception)` instead: it still ignores errors but lets ■ through.")
+            continue
+        target = _first_loop(stmt.body)
+        if target is not None:
+            _facts(found, target).notes.append(
+                f"[loop-autopsy] Note: this loop runs inside `with {code}:` (line {stmt.lineno}), which also "
+                f"swallows loop-autopsy's stop signal, so if the loop is stopped you will not see why. Use "
+                f"`suppress(Exception)` instead. `%autopsy last` shows a report that was hidden this way.")
 
 
 def _note_catch_all(stmt: Any, loop: Optional[ast.AST], found: Dict[int, LoopFacts]) -> None:

@@ -37,6 +37,10 @@ LOOPS = [
      "i = 0\nitems = [0] * 8\nwhile i < N:\n    items[i % 8] = i\n    i += 1\n"),
     ("inside a function",
      "def run(n):\n    i = 0\n    while i < n:\n        i += 1\n    return i\nrun(N)\n"),
+    ("list comprehension",
+     "squares = [i * i for i in range(N)]\n"),
+    ("sum of a generator",
+     "total = sum(i for i in range(N))\n"),
 ]
 
 

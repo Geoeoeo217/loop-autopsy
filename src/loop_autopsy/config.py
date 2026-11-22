@@ -42,7 +42,7 @@ class LoopInfo:
     """Static facts about one loop, collected when the cell is transformed."""
 
     loop_id: int
-    kind: str  # "while" | "for"
+    kind: str  # "while" | "for" | "comprehension" (also list(it), sum(it), ...)
     lineno: int
     header: str
     test_src: str = ""
@@ -59,6 +59,12 @@ class LoopInfo:
     outside_update: Optional[Tuple[str, int, str]] = None  # (name, line, code): its update sits after the loop
     branch_updates: Tuple[Any, ...] = ()  # loop_notes.BranchUpdate: its updates sit inside an if
     unwatched_changes: bool = False  # a variable the loop changes was left out by max_watched
+    suspends: bool = False  # contains await / async for: other tasks may change its values meanwhile
+    lazy: bool = False  # a generator expression: whoever uses it may stop early
+    attr_only: Tuple[str, ...] = ()  # objects followed through their attributes (self in self.n)
+    compare_or: Tuple[Tuple[tuple, str], ...] = ()  # (spec, source) of each comparison in an `or`
+    compare_and: Optional[Tuple[tuple, str]] = None  # the comparison followed in an `and`
+    and_guard: Tuple[str, ...] = ()  # names in the other parts of that `and`
 
 
 @dataclass

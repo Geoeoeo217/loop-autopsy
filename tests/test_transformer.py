@@ -27,7 +27,9 @@ def test_compare_spec_simple_and_complex():
     assert compare_spec(ast.parse("a < b < c", mode="eval").body) is None
     assert compare_spec(ast.parse("len(s) > 0", mode="eval").body) == (("len", "s"), ">", ("const", 0))
     assert compare_spec(ast.parse("i < len(nums)", mode="eval").body) == (("name", "i"), "<", ("len", "nums"))
-    for not_simple in ("len(s) - 1 > i", "i < len(a.b)", "i < len(s, 2)", "i < max(s)", "i < len(*s)"):
+    assert compare_spec(ast.parse("i < len(a.b)", mode="eval").body) == (("name", "i"), "<", ("len", "a.b"))
+    assert compare_spec(ast.parse("self.n < 10", mode="eval").body) == (("name", "self.n"), "<", ("const", 10))
+    for not_simple in ("len(s) - 1 > i", "i < len(a.b.c)", "i < len(s, 2)", "i < max(s)", "i < len(*s)"):
         assert compare_spec(ast.parse(not_simple, mode="eval").body) is None, not_simple
 
 
@@ -73,8 +75,19 @@ def test_while_else_keeps_its_else_block():
     ast.parse(code)  # still valid Python
 
 
-def test_async_for_is_left_alone():
+def test_async_for_is_watched_for_time_and_memory():
     infos, code = transform("async def f():\n    async for v in src:\n        pass\n")
+    assert len(infos) == 1 and infos[0].header == "async for v in src:" and infos[0].suspends
+    ast.parse(code)
+
+
+def test_a_while_loop_with_await_is_watched_but_suspends():
+    infos, _ = transform("async def f():\n    while not done:\n        await asyncio.sleep(1)\n")
+    assert len(infos) == 1 and infos[0].suspends
+
+
+def test_a_generator_loop_is_left_alone():
+    infos, code = transform("def g():\n    while True:\n        yield 1\n")
     assert infos == [] and "__loop_autopsy__" not in code
 
 
@@ -87,7 +100,7 @@ def test_for_with_unpacking_and_break():
     infos, code = transform("for i, (a, b) in enumerate(pairs):\n    total += a\n    break\n")
     info = infos[0]
     assert info.header == "for (i, (a, b)) in enumerate(pairs):"
-    assert info.iter_name is None and not info.repeat_safe
+    assert info.iter_name == "pairs" and not info.repeat_safe  # the list enumerate goes through
     assert "total" in info.watched
     ast.parse(code)
 
@@ -111,9 +124,12 @@ def test_outer_loop_does_not_watch_names_inside_a_function_it_defines():
     assert outer.watched == ("ks", "out", "f", "k")
 
 
-def test_comprehensions_are_not_instrumented():
-    infos, code = transform("x = [i for i in range(3)]\ny = {k: 1 for k in x}\n")
-    assert infos == [] and "__loop_autopsy__" not in code
+def test_comprehensions_are_watched():
+    infos, code = transform("x = [i for i in range(3)]\ny = {k: 1 for k in x}\nz = (j for j in x)\n")
+    assert [i.kind for i in infos] == ["comprehension"] * 3
+    assert [i.lazy for i in infos] == [False, False, True]  # a generator expression may be stopped early
+    assert "__loop_autopsy__.watch(0, range(3))" in code
+    ast.parse(code)
 
 
 def test_max_watched_limits_the_watched_names():
