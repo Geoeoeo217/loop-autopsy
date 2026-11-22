@@ -117,3 +117,25 @@ def test_a_loop_that_speeds_up_is_not_stopped_by_the_estimate(shell, capsys):
         assert "Note: loop would take too long" in out  # still told early, as a note
     finally:
         run(shell, "%autopsy reset")
+
+
+def test_monitor_pickles_as_a_switched_off_copy():
+    """cloudpickle (joblib, Dask, Ray, PySpark) sends the globals a notebook function
+    uses, including __loop_autopsy__; that used to fail on its locks and streams."""
+    import pickle
+
+    from loop_autopsy.config import Settings
+    from loop_autopsy.monitor import Monitor
+
+    copy = pickle.loads(pickle.dumps(Monitor(None, Settings())))
+    assert isinstance(copy, Monitor) and copy.enabled is False
+    copy.begin(0)  # a loop it never registered runs unwatched
+    assert copy.due(0) is False
+
+
+def test_notebook_function_with_a_loop_can_be_cloudpickled(shell):
+    import pytest
+    cloudpickle = pytest.importorskip("cloudpickle")
+    run(shell, "def work(n):\n    t = 0\n    for k in range(n):\n        t += k\n    return t")
+    copy = cloudpickle.loads(cloudpickle.dumps(shell.user_ns["work"]))
+    assert copy(100) == 4950

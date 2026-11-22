@@ -178,6 +178,13 @@ def _endless_now(iterable: Any) -> Tuple[Optional[str], Any]:
             return None, iter(())
     return kind, iterable
 
+
+def _unwatched_monitor() -> "Monitor":
+    """What a Monitor becomes when it is pickled (see ``Monitor.__reduce__``)."""
+    monitor = Monitor(None, Settings())
+    monitor.enabled = False
+    return monitor
+
 class Monitor:
     """One per IPython shell. Instrumented code calls it as ``__loop_autopsy__``."""
 
@@ -209,6 +216,13 @@ class Monitor:
         self._pending_stop: Optional[Tuple[Finding, LoopState, float]] = None  # set by the watchdog
         self._watchdog: Optional[Tuple[threading.Thread, threading.Event]] = None
         self._noted_limit = False
+
+    def __reduce__(self):
+        """Functions typed in a notebook refer to ``__loop_autopsy__``, so cloudpickle
+        (joblib, Dask, Ray, PySpark, multiprocessing) sends this object along with them.
+        It holds a shell, locks and streams that cannot be sent; the other process gets
+        a switched-off Monitor instead, and the loops run there unwatched."""
+        return (_unwatched_monitor, ())
 
     # ------------------------------------------------------------------ transformer side
     def register(self, info: LoopInfo) -> int:
