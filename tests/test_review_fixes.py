@@ -1,6 +1,8 @@
 """Regression tests for problems found in the pre-release package review (0.4.0)."""
 import time
 
+from loop_autopsy.magics import CellFailed
+
 
 def run(shell, code):
     return shell.run_cell(code)
@@ -29,3 +31,18 @@ def test_and_condition_still_catches_a_wrong_direction(shell):
         assert result.error_in_exec.finding.kind == "wrong_direction"
     finally:
         run(shell, "%autopsy reset")
+
+
+def test_error_in_an_unwatched_cell_fails_the_cell(shell, capsys):
+    """An error inside `%%autopsy off` used to report success, so "Run All" went on."""
+    capsys.readouterr()
+    result = run(shell, "%%autopsy off\n1 / 0")
+    out = capsys.readouterr().out
+    assert not result.success and isinstance(result.error_in_exec, CellFailed)
+    assert isinstance(result.error_in_exec.error, ZeroDivisionError)
+    assert out.count("ZeroDivisionError") >= 1 and "see above" in out
+
+
+def test_unwatched_cell_without_an_error_still_succeeds(shell):
+    result = run(shell, "%%autopsy off\nq = 0\nwhile q < 1000:\n    q += 1\n")
+    assert result.success and shell.user_ns["q"] == 1000

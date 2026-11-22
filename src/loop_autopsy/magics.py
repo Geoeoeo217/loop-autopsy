@@ -25,6 +25,18 @@ HELP = """loop-autopsy commands
 COMMANDS = ("status", "on", "off", "last", "heatmap", "summary", "memory", "config", "reset", "help")
 
 
+class CellFailed(Exception):
+    """A cell run with ``%%autopsy off`` raised an error. Its traceback was already
+    shown, so this one is shown as a single line instead of a second traceback."""
+
+    def __init__(self, error: Optional[BaseException] = None):
+        super().__init__(f"the cell raised {type(error).__name__}" if error is not None else "the cell failed")
+        self.error = error
+
+    def _render_traceback_(self):  # IPython shows these lines instead of a traceback
+        return [f"(%%autopsy off: {self.args[0]}, see above)"]
+
+
 def unknown_command(command: str) -> str:
     """A one-line note for a mistyped command, with the closest real one if there is one."""
     close = get_close_matches(command, COMMANDS, n=1, cutoff=0.6)
@@ -46,7 +58,11 @@ class AutopsyMagics(Magics):
             if args[:1] == ["off"]:
                 assert self.shell is not None
                 with self.monitor.paused():
-                    self.shell.run_cell(cell, store_history=False)
+                    result = self.shell.run_cell(cell, store_history=False)
+                if result is not None and not result.success:
+                    # The inner cell already showed its error. Fail this cell too, so that
+                    # Jupyter marks it as failed and "Run All" stops here.
+                    raise CellFailed(result.error_in_exec or result.error_before_exec)
                 return None
             # An error, not just a message: a typo such as "%%autopsy of" must not quietly
             # skip the cell while "Run All" carries on as if it had run.
