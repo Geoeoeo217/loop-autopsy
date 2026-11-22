@@ -23,6 +23,7 @@ SCALARS = (bool, int, float, complex, Fraction, Decimal)
 SMALL = 50  # containers up to this size are fingerprinted by content
 MAX_STORED = 50_000  # fingerprints kept per loop run
 FULL_BUDGET = 1_000_000  # elements visited by one full fingerprint
+GUARD_BUDGET = 10_000  # elements visited per check for the other parts of an `and` condition
 LONG_TEXT = 1000  # longer str/bytes are fingerprinted by length and hash
 STORED_ELEMENTS = 2_000_000  # elements kept across all stored full fingerprints of one loop run
 # Methods on these types only change the object itself, which is fingerprinted.
@@ -295,7 +296,9 @@ def check_direction(info: LoopInfo, state: LoopState, values: Dict[str, Any],
             return _part_of(finding, f" The loop goes on while any part of `{info.test_src}` is True, "
                                      f"so this part alone keeps it going.")
     if info.compare_and is not None:
-        guard = tuple(full_fp(values[n]) if n in values else OPAQUE for n in info.and_guard)
+        # Run on every check, so keep it cheap: a big container in the other parts (e.g. the
+        # `data` of `while i < n and data:`) is not followed, and without it there is no proof.
+        guard = tuple(full_fp(values[n], [GUARD_BUDGET]) if n in values else OPAQUE for n in info.and_guard)
         s = state.scratch
         if any(fp is OPAQUE for fp in guard):
             return None  # the other parts cannot be followed: no proof
