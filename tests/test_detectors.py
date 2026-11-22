@@ -154,7 +154,8 @@ def test_for_loops_are_never_called_stuck():
 
 def test_method_calls_on_built_in_values_are_trusted():
     state = make_state(watched=("x", "items"), receivers=("items",))  # e.g. items.count(0)
-    results = [step(state, check_repeat, {"x": 1, "items": [0]}) for _ in range(3)]
+    items = [0]  # one list, as in a real loop: a new list each round has a new id()
+    results = [step(state, check_repeat, {"x": 1, "items": items}) for _ in range(3)]
     assert results[2].kind == "stuck"
     hidden = make_state(receivers=("gen",))  # the receiver is not even among the values
     assert all(step(hidden, check_repeat, {"x": 1}) is None for _ in range(5))
