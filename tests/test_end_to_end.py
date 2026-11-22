@@ -137,3 +137,25 @@ def test_error_messages_are_never_muted(shell, capsys):
     shell.run_cell("%autopsy summary all")
     assert capsys.readouterr().out.count("output muted") == 2  # both cells are still marked
     assert "showtraceback" not in vars(shell)  # the real method is back after each cell
+
+
+def test_recursion_limit_guard_can_be_taken_over_and_removed(monkeypatch):
+    """A Monitor that was never unloaded must not leave its wrapper on
+    sys.setrecursionlimit for good: the next Monitor takes it over and can remove it."""
+    import sys
+
+    from loop_autopsy import monitor as monitor_module
+    from loop_autopsy.config import Settings
+    from loop_autopsy.monitor import Monitor
+
+    monkeypatch.setattr(monitor_module, "SAFE_RECURSION", 5000)
+    original = sys.setrecursionlimit
+    old, new = Monitor(None, Settings()), Monitor(None, Settings())
+    try:
+        old.guard_recursion_limit()  # never unguarded, like a forgotten Monitor
+        new.guard_recursion_limit()
+        assert sys.setrecursionlimit.__self_monitor__ is new
+        new.unguard_recursion_limit()
+        assert sys.setrecursionlimit is original
+    finally:
+        sys.setrecursionlimit = original

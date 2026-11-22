@@ -286,13 +286,18 @@ class Monitor:
         """Wrap ``sys.setrecursionlimit`` to warn, once, about a limit so high that a
         runaway recursion crashes the kernel (no report is possible then)."""
         func = sys.setrecursionlimit
-        if SAFE_RECURSION is None or getattr(func, "__loop_autopsy_limit__", False):
+        if SAFE_RECURSION is None:
             return
-        monitor = self
+        if getattr(func, "__loop_autopsy_limit__", False):
+            # Already wrapped, maybe by an older Monitor that was never unloaded: take it
+            # over, so this Monitor's notes and unguard_recursion_limit() apply to it.
+            func.__self_monitor__ = self  # type: ignore[attr-defined]
+            return
 
         @functools.wraps(func)
         def setrecursionlimit(limit):
             func(limit)
+            monitor = setrecursionlimit.__self_monitor__  # type: ignore[attr-defined]
             safe = SAFE_RECURSION
             if (monitor.enabled and safe is not None and isinstance(limit, int) and limit > safe
                     and not monitor._noted_limit):
