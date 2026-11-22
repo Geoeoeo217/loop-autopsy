@@ -21,6 +21,7 @@ SCALARS = (bool, int, float, complex, Fraction, Decimal)
 SMALL = 50  # containers up to this size are fingerprinted by content
 MAX_STORED = 50_000  # fingerprints kept per loop run
 FULL_BUDGET = 1_000_000  # elements visited by one full fingerprint
+STORED_ELEMENTS = 2_000_000  # elements kept across all stored full fingerprints of one loop run
 # Methods on these types only change the object itself, which is fingerprinted.
 BUILTIN_RECEIVERS = (str, bytes, list, dict, set, frozenset, tuple, deque, bytearray, int, float, complex)
 
@@ -125,19 +126,28 @@ def check_repeat(info: LoopInfo, state: LoopState, values: Dict[str, Any]) -> Op
             seen[key] = state.rounds
         return None
 
-    full = tuple((n, full_fp(v)) for n, v in values.items())
-    if any(fp is OPAQUE for _, fp in full):
-        s["rep_off"] = True
-        return None
-    try:
-        fkey = hash(full)
-    except TypeError:
-        s["rep_off"] = True
-        return None
+    parts, size = [], 0
+    for n, v in values.items():
+        budget = [FULL_BUDGET]
+        fp = full_fp(v, budget)
+        if fp is OPAQUE:
+            s["rep_off"] = True
+            return None
+        parts.append((n, fp))
+        size += FULL_BUDGET - budget[0] + 1
+    # The full fingerprint itself is the key, so a match means the states are equal:
+    # a hash alone is not proof (in CPython hash(-1) == hash(-2)).
+    full = tuple(parts)
     full_seen = s.setdefault("rep_full", {})
-    if fkey not in full_seen:
-        if len(full_seen) < MAX_STORED:
-            full_seen[fkey] = state.rounds
+    try:
+        if full not in full_seen:
+            stored = s.get("rep_stored", 0)
+            if len(full_seen) < MAX_STORED and stored + size <= STORED_ELEMENTS:
+                full_seen[full] = state.rounds
+                s["rep_stored"] = stored + size
+            return None
+    except TypeError:  # e.g. a signalling Decimal NaN cannot be hashed
+        s["rep_off"] = True
         return None
 
     if state.stride > 1:
@@ -145,9 +155,9 @@ def check_repeat(info: LoopInfo, state: LoopState, values: Dict[str, Any]) -> Op
         s["rep_refine"] = True
         state.stride = 1
         state.next_check = state.rounds + 1
-        s["rep_seen"], s["rep_full"] = {}, {}
+        s["rep_seen"], s["rep_full"], s["rep_stored"] = {}, {}, 0
         return None
-    distance = state.rounds - full_seen[fkey]
+    distance = state.rounds - full_seen[full]
     return _stuck_finding(info, values) if distance <= 1 else _cycle_finding(info, values, distance)
 
 
@@ -216,9 +226,50 @@ def _label(side) -> str:
     return f"len({side[1]})" if side[0] == "len" else str(side[1])
 
 
+def _comparable(a: Any, b: Any):
+    """``a`` and ``b`` in types that can be subtracted: Python compares a Decimal with
+    a float or a Fraction, but cannot subtract them, so those pairs become floats."""
+    if isinstance(a, Decimal) != isinstance(b, Decimal):
+        other = b if isinstance(a, Decimal) else a
+        if isinstance(other, (float, Fraction)):
+            return float(a), float(b)
+    return a, b
+
+
+def _shrank(step: Any, before: Any) -> bool:
+    """Did the distance grow by less this time than the time before? Then the loop
+    is slowing down and may still turn round (a ball thrown up comes back down).
+    Floats get a tiny tolerance for rounding."""
+    if isinstance(step, float) or isinstance(before, float):
+        return step < before - 1e-9 * abs(before)
+    return step < before
+
+
+def _moving_away(s: dict, prefix: str, size: Any, rounds: int) -> bool:
+    """One reading of the distance to the stop value (``size``): True when it grew
+    by at least as much as the last time (per round), which a loop that will
+    turn round cannot keep doing."""
+    prev, prev_round = s.get(prefix + "prev_size"), s.get(prefix + "prev_round")
+    s[prefix + "prev_size"], s[prefix + "prev_round"] = size, rounds
+    if prev is None or not size > prev:
+        s.pop(prefix + "step", None)
+        return False
+    step, span = size - prev, rounds - prev_round
+    before = s.get(prefix + "step")
+    s[prefix + "step"] = (step, span)
+    if before is not None and before[1] == span and _shrank(step, before[0]):
+        return False
+    return True
+
+
 def check_direction(info: LoopInfo, state: LoopState, values: Dict[str, Any],
                     settings: Settings) -> Optional[Finding]:
-    """R3 wrong direction and R4 jumped over, for simple comparisons."""
+    """R3 wrong direction and R4 jumped over, for simple comparisons.
+
+    Moving away from the stop value only counts while it does not slow down:
+    a loop whose steps shrink (a thrown ball, a decaying simulation) may still
+    turn round and end.
+    """
     if info.kind != "while" or not info.compare:
         return None
     left, op, right = info.compare
@@ -228,19 +279,21 @@ def check_direction(info: LoopInfo, state: LoopState, values: Dict[str, Any],
     s = state.scratch
     sides = (left, right)
     now = (a, b)  # both sides are remembered: with two variables, either one may be the one that moves
+    ga, gb = _comparable(a, b)
 
     if op == "!=":
-        gap = b - a
+        gap = gb - ga
         prev = s.get("jump_prev")
+        away = _moving_away(s, "jump_", abs(gap), state.rounds)
         if prev is not None and (prev > 0) != (gap > 0):
             s["jump_crossed"] = (s.get("jump_prev_val"), now)
             s["jump_streak"] = 0
-        elif s.get("jump_crossed") and prev is not None and abs(gap) > abs(prev):
+        elif s.get("jump_crossed") and prev is not None and away:
             s["jump_streak"] = s.get("jump_streak", 0) + 1
         elif s.get("jump_crossed"):
             s["jump_streak"] = 0
         s["jump_prev"], s["jump_prev_val"] = gap, now
-        if s.get("jump_crossed") and s.get("jump_streak", 0) >= settings.jump_after:
+        if s.get("jump_crossed") and s.get("jump_streak", 0) >= max(1, settings.jump_after):
             before, after = s["jump_crossed"]
             moved = _moved(sides, before, after)
             if _length_moved(sides, moved):
@@ -270,16 +323,15 @@ def check_direction(info: LoopInfo, state: LoopState, values: Dict[str, Any],
             )
         return None
 
-    gap = (b - a) if op in ("<", "<=") else (a - b)
-    prev = s.get("dir_prev")
-    if prev is not None and gap > prev:
+    gap = (gb - ga) if op in ("<", "<=") else (ga - gb)
+    if _moving_away(s, "dir_", gap, state.rounds):
         if s.get("dir_streak", 0) == 0:
             s["dir_start"] = s.get("dir_prev_val")
         s["dir_streak"] = s.get("dir_streak", 0) + 1
     else:
         s["dir_streak"] = 0
-    s["dir_prev"], s["dir_prev_val"] = gap, now
-    if s.get("dir_streak", 0) >= settings.direction_after:
+    s["dir_prev_val"] = now
+    if s.get("dir_streak", 0) >= max(1, settings.direction_after):
         start = s["dir_start"]
         moved = _moved(sides, start, now)
         if _length_moved(sides, moved):

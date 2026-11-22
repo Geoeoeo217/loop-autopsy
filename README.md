@@ -103,6 +103,11 @@ They are reported only when the length stays the same. A list that keeps
 growing is no proof, because a queue often grows for a long time before it
 empties; such a loop gets the time limit instead.
 
+Moving away from the stop value only counts while the loop does not slow
+down. A ball thrown upwards (`while h > 0: h += v; v -= 0.01`) rises for a
+long time, but each step is smaller than the last, so it is left to run and
+comes back down.
+
 A `while True:` loop with no `break`, `return`, `raise` or `exit()` inside gets
 a one-line note as soon as it starts, because it can only end with an error.
 
@@ -300,6 +305,10 @@ Change any of these with `%autopsy config key=value` (for example `%autopsy conf
 | `history_cells` | 200 | cells remembered for `%autopsy summary` (0 = off) |
 | `grow_yellow` / `grow_red` | 0.05 / 0.20 | summary: memory one cell added, as a fraction of the limit, for a yellow / red square |
 | `rerun_growth_mb` | 10 | MB a cell must add on each of two re-runs in a row to be flagged as growing on every re-run (0 = off) |
+
+Counts such as `direction_after` and `replay_rows` must be at least 1, and the
+memory fractions (`memory_stop`, `memory_warn`, `mem_yellow`, `mem_red`,
+`grow_yellow`, `grow_red`) must be above 0 and at most 1; other values are refused.
 
 The summary also uses `time_yellow` / `time_red` for a cell's run time. Its history
 lives in memory only and is gone when the kernel restarts. Spotting a cell that

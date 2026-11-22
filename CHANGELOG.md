@@ -5,7 +5,36 @@ Version numbers follow [Semantic Versioning](https://semver.org/).
 
 ## Unreleased
 
-Nothing yet.
+### Fixed
+
+- A loop inside a function whose condition uses a global (`while
+  state['i'] < 5:`, or `global n` then `while n < 5:`) was stopped as
+  "stuck" after 3 rounds with an empty explanation. Globals are now read
+  too, and a condition variable that cannot be found switches the stuck and
+  cycle rules off.
+- After `%reset -f` every loop failed with `NameError: __loop_autopsy__`.
+  After `%reload_ext loop_autopsy`, calling a function defined earlier
+  crashed with `IndexError`, or used another loop's information. Both now
+  keep working.
+- "Wrong direction" and "jumped over" no longer fire on a loop that moves
+  away from its stop value more slowly each time (a thrown ball, a decaying
+  simulation), since it may still turn round.
+- Stuck and cycle compared states by hash only, so states with equal hashes
+  (in CPython `hash(-1) == hash(-2)`) gave false "cycle" reports. States
+  are now compared exactly.
+- A rule that fails on unusual values no longer crashes the loop: a
+  `Decimal` compared with a `float`, or a `Fraction` with a `Decimal`,
+  raised `TypeError`. Such pairs now work, and any other rule error
+  switches only that rule off for that loop.
+- `%autopsy config` refuses values that broke the rules: 0 for
+  `direction_after` (which crashed every `while` loop), `jump_after`,
+  `growth_after`, `replay_rows` or `max_watched`, and memory fractions of 0
+  or above 1 (`memory_stop=0` stopped every loop).
+
+### Development
+
+- `tests/test_regressions.py`: one group of tests per bug above, run at
+  the default thresholds.
 
 ## 0.4.0 (2026-11-22)
 

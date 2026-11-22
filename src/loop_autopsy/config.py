@@ -127,6 +127,11 @@ class Settings:
             value = int(number) if is_int else number
         if isinstance(value, (int, float)) and value < 0:
             raise ValueError(f"{key} cannot be negative")
+        if key in _AT_LEAST_ONE and value < 1:
+            raise ValueError(f"{key} must be at least 1")
+        if key in _FRACTIONS and not 0 < value <= 1:
+            raise ValueError(f"{key} is a fraction of the memory limit: use a number above 0 and at most 1, "
+                             f"for example {getattr(Settings, key)}")
         setattr(self, key, value)
         return value
 
@@ -143,6 +148,12 @@ class Settings:
                 changed[name] = (old, default)
                 setattr(self, name, default)
         return changed
+
+
+# Counts where 0 makes no sense (a rule that fires before anything happened, an empty table).
+_AT_LEAST_ONE = frozenset({"direction_after", "jump_after", "growth_after", "replay_rows", "max_watched"})
+# Fractions of the memory limit: 0 would stop or flag every loop.
+_FRACTIONS = frozenset({"memory_stop", "memory_warn", "mem_yellow", "mem_red", "grow_yellow", "grow_red"})
 
 
 def _number(key: str, raw: str) -> float:

@@ -47,7 +47,7 @@ def test_while_loop_is_instrumented():
     assert info.cond_names == ("count",) and info.repeat_safe and not info.waits_for_user
     assert "__loop_autopsy__.begin(0)" in code
     assert "if __loop_autopsy__.due(0):" in code
-    assert "__loop_autopsy__.check(0, locals())" in code
+    assert "__loop_autopsy__.check(0, locals(), globals())" in code
 
 
 def test_for_loop_records_iterable_name():

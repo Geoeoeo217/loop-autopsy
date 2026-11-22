@@ -6,7 +6,7 @@ Every ``while``/``for`` loop gets two inserted calls::
     __loop_autopsy__.begin(ID)                 # before the loop
     while cond:
         if __loop_autopsy__.due(ID):           # first line of the body
-            __loop_autopsy__.check(ID, locals())
+            __loop_autopsy__.check(ID, locals(), globals())
         ...
 
 ``due`` is a cheap counter; ``check`` runs the detectors (monitor.py).
@@ -268,7 +268,8 @@ class LoopTransformer(ast.NodeTransformer):
             test=ast.Call(ast.Attribute(rt(), "due", ast.Load()), [ast.Constant(loop_id)], []),
             body=[ast.Expr(ast.Call(
                 ast.Attribute(rt(), "check", ast.Load()),
-                [ast.Constant(loop_id), ast.Call(ast.Name("locals", ast.Load()), [], [])], [],
+                [ast.Constant(loop_id), ast.Call(ast.Name("locals", ast.Load()), [], []),
+                 ast.Call(ast.Name("globals", ast.Load()), [], [])], [],
             ))],
             orelse=[],
         )

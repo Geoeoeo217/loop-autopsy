@@ -18,7 +18,7 @@ _LOADED: dict = {}
 def load_ipython_extension(ip) -> None:
     from .heatmap import CellHealth
     from .magics import AutopsyMagics
-    from .monitor import Monitor
+    from .monitor import Monitor, registry_for
     from .report import display_report
     from .transformer import RUNTIME_NAME, LoopTransformer
 
@@ -26,7 +26,8 @@ def load_ipython_extension(ip) -> None:
         print("loop-autopsy is already loaded. Use %autopsy help for options.")
         return
     settings = Settings()
-    monitor = Monitor(ip, settings)
+    # Loop ids are shared with earlier loads, so functions defined before %reload_ext keep working.
+    monitor = Monitor(ip, settings, registry_for(ip))
     transformer = LoopTransformer(monitor.register, lambda: settings.max_watched, monitor.is_paused)
     health = CellHealth(ip, settings, monitor.stats, show=display_report)
 
