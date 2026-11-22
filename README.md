@@ -381,8 +381,8 @@ Built by a team of five for CS1302 (Introduction to Computer Programming).
 | --- | --- |
 | NATHANAEL George Steindhart | project lead: loop rewriting (`transformer.py`), run-time glue (`monitor.py`), settings (`config.py`), magics, packaging and docs |
 | SETIAWAN Matthew Henson | detection rules: stuck, cycle, wrong direction, jumped over, time limit (`detectors.py`), runaway recursion (`recursion.py`), notes read from the code (`loop_notes.py`) |
-| LATHIF Muhammad Akmal | memory and growing-list rules, `%autopsy memory` (`growth.py`); license checks and third-party licenses (`tests/test_license.py`, `THIRD_PARTY_LICENSES.md`) |
-| KWAN Kendrick Matthew | replay table and reports (`report.py`); report helpers for themes, translations, accessibility checks, export, metrics and sparkline charts (`report_*.py`, `sparkline.py`) |
+| LATHIF Muhammad Akmal | memory and growing-list rules, `%autopsy memory` (`growth.py`); `%%growthcheck` (`growth_check.py`), `%growthdiff` (`growth_diff.py`), `%memaliases` / `%memparts` (`memory_inspect.py`), allocation tracing (`extras/growth_trace.py`); license checks and third-party licenses (`tests/test_license.py`, `THIRD_PARTY_LICENSES.md`) |
+| KWAN Kendrick Matthew | replay table and reports (`report.py`), accessibility checks and report metrics (`report_accessibility.py`, `report_metrics.py`); optional extras for themes, translations, export and sparkline charts (`extras/`) |
 | HANDAYA Clement Steward | cell health bar, session summary and output guard (`heatmap.py`); CI, benchmark, real-kernel and documentation tests |
 
 

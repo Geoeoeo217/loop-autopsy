@@ -9,8 +9,8 @@ else's module, open an issue or ask them first.
 |---|---|
 | NATHANAEL George Steindhart | `pyproject.toml`, `README.md`, `CHANGELOG.md`, `CONTRIBUTING.md`, `config.py`, `transformer.py`, `monitor.py`, `magics.py`, `__init__.py`, `examples/demo.ipynb`, `tests/test_config.py`, `tests/test_transformer.py`, `tests/test_end_to_end.py` |
 | SETIAWAN Matthew Henson | `detectors.py`, `recursion.py`, `loop_notes.py`, `tests/test_detectors.py`, `tests/test_recursion.py`, `tests/test_loop_notes.py`, `tests/test_false_positives.py` |
-| LATHIF Muhammad Akmal | `growth.py`, `THIRD_PARTY_LICENSES.md`, `tests/test_growth.py`, `tests/test_memory_overview.py`, `tests/test_license.py` |
-| KWAN Kendrick Matthew | `report.py`, `report_i18n.py`, `report_theme.py`, `report_accessibility.py`, `report_export.py`, `report_metrics.py`, `sparkline.py`, and their tests (`tests/test_report*.py`, `tests/test_sparkline.py`) |
+| LATHIF Muhammad Akmal | `growth.py`, `growth_check.py`, `growth_diff.py`, `memory_inspect.py`, `extras/growth_trace.py`, `THIRD_PARTY_LICENSES.md`, `docs/growth-check.md`, `docs/growth-trace.md`, `tests/test_growth.py`, `tests/test_growth_check.py`, `tests/test_growth_diff.py`, `tests/test_growth_trace.py`, `tests/test_memory_inspect.py`, `tests/test_memory_overview.py`, `tests/test_license.py` |
+| KWAN Kendrick Matthew | `report.py`, `report_accessibility.py`, `report_metrics.py`, `extras/__init__.py`, `docs/extras.md`, `extras/report_export.py`, `extras/report_i18n.py`, `extras/report_theme.py`, `extras/sparkline.py`, and their tests (`tests/test_report*.py`, `tests/test_sparkline.py`) |
 | HANDAYA Clement Steward | `heatmap.py`, `.github/workflows/tests.yml`, `benchmarks/`, `examples/refresh_demo.py`, `tests/test_heatmap.py`, `tests/test_magics.py`, `tests/test_monitor.py`, `tests/test_docs.py`, `tests/test_real_kernel.py`, `tests/test_slow_and_endless.py` |
 
 ## One-time setup
