@@ -386,15 +386,13 @@ def memory_overview(namespace: Dict[str, Any], top: int = 5) -> str:
     return "\n".join(lines)
 
 
+# len() of these is instant. Other objects may compute their length on every call (a Dask
+# DataFrame runs its whole task graph), and the growth rules call this on every check.
+_CHEAP_LEN = (list, dict, set, frozenset, bytearray, str, bytes, tuple, deque, range)
+
+
 def _lengths(values: Dict[str, Any]) -> Dict[str, int]:
-    out = {}
-    for name, value in values.items():
-        if isinstance(value, (list, dict, set, bytearray, str, bytes, tuple)) or hasattr(value, "__len__"):
-            try:
-                out[name] = len(value)
-            except Exception:
-                pass
-    return out
+    return {name: len(value) for name, value in values.items() if isinstance(value, _CHEAP_LEN)}
 
 
 def remember_start(state: LoopState, values: Dict[str, Any]) -> None:
@@ -409,10 +407,9 @@ def check_growing_iterable(info: LoopInfo, state: LoopState, values: Dict[str, A
     name = info.iter_name
     if info.kind != "for" or not name or name not in values:
         return None
-    try:
-        now = len(values[name])
-    except TypeError:
-        return None
+    if not isinstance(values[name], _CHEAP_LEN):
+        return None  # only built-in containers can grow while a for loop reads them
+    now = len(values[name])
     start = state.scratch.get("len0", {}).get(name)
     if start is None or state.rounds < settings.growth_after:
         return None

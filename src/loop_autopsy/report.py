@@ -7,6 +7,7 @@ not text, and converts containers to a small size marker.
 from __future__ import annotations
 
 import html
+from collections import deque
 from decimal import Decimal
 from fractions import Fraction
 from typing import Any, Dict, List, Optional, Tuple
@@ -59,6 +60,9 @@ class Size:
         return f"{self.kind}(len={self.length})" if self.length >= 0 else f"<{self.kind}>"
 
 
+_CHEAP_LEN = (list, dict, set, frozenset, tuple, bytearray, str, bytes, range, deque)
+_CHEAP_LEN_BY_NAME = {("numpy", "ndarray"), ("pandas", "Series"), ("pandas", "DataFrame")}
+
 LONG = 1000  # longer str/bytes (and ints over 4,000 bits) are not kept in the history
 
 
@@ -106,6 +110,11 @@ def replay_value(value: Any) -> Any:
             text = repr(value)
             if len(text) <= 40:
                 return Text(text)
+        t = type(value)
+        if not isinstance(value, _CHEAP_LEN) and (t.__module__.split(".")[0], t.__name__) not in _CHEAP_LEN_BY_NAME:
+            # len() of other objects may be slow (a Dask DataFrame computes itself), and
+            # this runs on every check: show the type only.
+            return Size(type(value).__name__, -1)
         return Size(type(value).__name__, len(value))
     except Exception:
         return Size(type(value).__name__, -1)

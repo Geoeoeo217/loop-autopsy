@@ -81,3 +81,25 @@ def test_watchdog_leaves_a_suspended_async_loop_alone(monkeypatch):
         monitor.watchdog_tick(now=t0 + 5)
         monitor.watchdog_tick(now=t0 + 10)
         assert len(sent) == expected
+
+
+def test_objects_with_a_slow_len_are_not_measured_on_every_check(shell):
+    """len() of a Dask DataFrame runs its whole computation. It used to be called on
+    every check, so a quick for loop over one ran into the time limit."""
+    run(shell, "class SlowLen:\n"
+               "    calls = 0\n"
+               "    def __len__(self):\n"
+               "        SlowLen.calls += 1\n"
+               "        return 3000\n"
+               "    def __iter__(self):\n"
+               "        return iter(range(3000))\n"
+               "items = SlowLen()")
+    result = run(shell, "total = 0\nfor x in items:\n    total += x\n")
+    assert result.error_in_exec is None and shell.user_ns["total"] == sum(range(3000))
+    assert shell.user_ns["SlowLen"].calls == 0
+
+
+def test_replay_still_shows_the_size_of_built_in_containers():
+    from loop_autopsy.report import Size, replay_value
+    assert replay_value(list(range(20))) == Size("list", 20)
+    assert repr(replay_value(object())) == "<object>"
