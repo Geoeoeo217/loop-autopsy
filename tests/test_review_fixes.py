@@ -108,10 +108,13 @@ def test_replay_still_shows_the_size_of_built_in_containers():
 def test_a_loop_that_speeds_up_is_not_stopped_by_the_estimate(shell, capsys):
     """The estimate used to stop a loop early. A loop whose first rounds are slow and
     the rest instant was stopped as "would take too long" although it finished in time."""
-    run(shell, "%autopsy config time_limit=2 estimate_after=0.2")
+    # The slow part is measured by the clock, not in rounds: time.sleep(0.01) can take
+    # far longer than 10 ms on a busy CI machine.
+    run(shell, "%autopsy config time_limit=5 estimate_after=0.2")
     try:
         capsys.readouterr()
-        result = run(shell, "import time\nfor i in range(100_000):\n    if i < 40:\n        time.sleep(0.01)\n")
+        result = run(shell, "import time\nt0 = time.perf_counter()\nfor i in range(100_000):\n"
+                            "    if time.perf_counter() - t0 < 0.6:\n        time.sleep(0.01)\n")
         out = capsys.readouterr().out
         assert result.error_in_exec is None and shell.user_ns["i"] == 99_999
         assert "Note: loop would take too long" in out  # still told early, as a note
