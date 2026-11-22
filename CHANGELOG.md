@@ -5,6 +5,10 @@ Version numbers follow [Semantic Versioning](https://semver.org/).
 
 ## Unreleased
 
+Nothing yet.
+
+## 0.4.0 (2026-11-22)
+
 ### Added
 
 - Comprehensions and generator expressions are watched: they get the time
@@ -31,6 +35,46 @@ Version numbers follow [Semantic Versioning](https://semver.org/).
 - Notes for a `break`, `continue` or `return` inside a `finally:` block and
   for `with suppress(BaseException):`, which swallow the stop like a bare
   `except:`, and (Python 3.11 and older) for a recursion limit above 10,000.
+- Update line after the loop: when the line right after a `while` loop
+  changes a variable of its condition and nothing inside the loop does, the
+  stuck and time-limit reports name that line and ask whether it should be
+  indented.
+- Update line inside an `if` that never runs: when a stuck loop's only
+  update sits in an `if` (or `else`/`elif` part) whose condition never lets
+  it run, the hint names that line, the condition and the values that keep
+  it False.
+- A `for` loop over `itertools.count()`, `itertools.cycle(...)` or
+  `itertools.repeat(x)` with no `break`, `return` or `raise` gets a note on
+  its first round.
+- A bare `except:` or `except BaseException:` inside or around a loop gets a
+  note when the loop starts: inside, it swallows ■; around, it hides a
+  stopped loop's report.
+- New module `loop_notes.py` holds these checks.
+- "Wrong direction" and "jumped over" also work for a condition with
+  `len(name)`, such as `while i < len(nums):`, as long as the length stays
+  the same. A length that changes is left alone, since a queue can grow for
+  a long time before it empties.
+- Optional memory tools, each loaded on its own:
+  `%%growthcheck` previews a `for` loop that changes the list it loops over
+  (`loop_autopsy.growth_check`), `%growthdiff mark` / `show` compares
+  variable sizes before and after a cell (`loop_autopsy.growth_diff`), and
+  `%memaliases` / `%memparts` find names sharing one object and show what a
+  container holds (`loop_autopsy.memory_inspect`).
+- `loop_autopsy.extras.growth_trace` finds the notebook lines whose live
+  allocations keep growing after a loop.
+
+### Changed
+
+- Requires IPython 8.15 or newer. Older versions failed tests: with 7.x the
+  recursion report does not appear in a kernel, and before 8.15
+  `%reset -f out`, which `%autopsy memory` recommends, does not free memory.
+- The version is written only in `src/loop_autopsy/__init__.py`;
+  `pyproject.toml` reads it from there.
+- The package ships `py.typed`, so type checkers use its type hints.
+- The optional report helpers moved into `loop_autopsy.extras`: import
+  `loop_autopsy.extras.report_theme`, `report_i18n`, `report_export` and
+  `sparkline` instead of `loop_autopsy.<name>`. The core package does not
+  use them.
 
 ### Fixed
 
@@ -99,15 +143,9 @@ Version numbers follow [Semantic Versioning](https://semver.org/).
 - `docs/extras.md` imported the extras from their old place; the examples
   now use `loop_autopsy.extras.*`, and the docs say that the built-in
   reports do not use them.
-
-### Changed
-
-- Requires IPython 8.15 or newer. Older versions failed tests: with 7.x the
-  recursion report does not appear in a kernel, and before 8.15
-  `%reset -f out`, which `%autopsy memory` recommends, does not free memory.
-- The version is written only in `src/loop_autopsy/__init__.py`;
-  `pyproject.toml` reads it from there.
-- The package ships `py.typed`, so type checkers use its type hints.
+- On Python 3.9–3.11, a Monitor that was never unloaded left its wrapper on
+  `sys.setrecursionlimit`, so the next Monitor could not remove it. The newest
+  Monitor now takes the wrapper over.
 
 ### Development
 
@@ -116,48 +154,6 @@ Version numbers follow [Semantic Versioning](https://semver.org/).
 - CI also tests the oldest supported IPython, runs the tests against the
   built wheel rather than the source folder, and runs `mypy`.
 - The `[test]` extra has lower bounds, and there is a `[typecheck]` extra.
-
-## 0.4.0 (2026-11-22)
-
-### Added
-
-- Update line after the loop: when the line right after a `while` loop
-  changes a variable of its condition and nothing inside the loop does, the
-  stuck and time-limit reports name that line and ask whether it should be
-  indented.
-- Update line inside an `if` that never runs: when a stuck loop's only
-  update sits in an `if` (or `else`/`elif` part) whose condition never lets
-  it run, the hint names that line, the condition and the values that keep
-  it False.
-- A `for` loop over `itertools.count()`, `itertools.cycle(...)` or
-  `itertools.repeat(x)` with no `break`, `return` or `raise` gets a note on
-  its first round.
-- A bare `except:` or `except BaseException:` inside or around a loop gets a
-  note when the loop starts: inside, it swallows ■; around, it hides a
-  stopped loop's report.
-- New module `loop_notes.py` holds these checks.
-- "Wrong direction" and "jumped over" also work for a condition with
-  `len(name)`, such as `while i < len(nums):`, as long as the length stays
-  the same. A length that changes is left alone, since a queue can grow for
-  a long time before it empties.
-- Optional memory tools, each loaded on its own:
-  `%%growthcheck` previews a `for` loop that changes the list it loops over
-  (`loop_autopsy.growth_check`), `%growthdiff mark` / `show` compares
-  variable sizes before and after a cell (`loop_autopsy.growth_diff`), and
-  `%memaliases` / `%memparts` find names sharing one object and show what a
-  container holds (`loop_autopsy.memory_inspect`).
-- `loop_autopsy.extras.growth_trace` finds the notebook lines whose live
-  allocations keep growing after a loop.
-
-### Changed
-
-- The optional report helpers moved into `loop_autopsy.extras`: import
-  `loop_autopsy.extras.report_theme`, `report_i18n`, `report_export` and
-  `sparkline` instead of `loop_autopsy.<name>`. The core package does not
-  use them.
-
-### Development
-
 - `tests/test_false_positives.py`: 27 correct but suspicious-looking loops
   that must never be stopped, run with stricter thresholds than the
   defaults, plus broken versions that must still be stopped.
