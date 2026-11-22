@@ -38,7 +38,7 @@ dependencies = ["ipython>=8.15"]  # tested in CI ("oldest" job); older ones fail
 
 [project.optional-dependencies]
 memory = ["psutil>=5.6"]  # exact memory readings on macOS and in containers; optional
-test = ["pytest>=7", "pytest-cov>=4", "nbclient>=0.5", "ipykernel>=6"]
+test = ["pytest>=7", "pytest-cov>=4", "nbclient>=0.5", "ipykernel>=6", "numpy", "cloudpickle"]  # numpy, cloudpickle: tests only
 typecheck = ["mypy>=1.5"]
 
 [project.urls]
