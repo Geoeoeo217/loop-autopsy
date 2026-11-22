@@ -65,6 +65,10 @@ Nothing yet.
 
 ### Changed
 
+- "Would take too long" is now a note, not a stop. The estimate is a guess: a
+  loop whose first rounds were slow and the rest instant was stopped although it
+  would have finished in 7 s. The loop now keeps running and only the time limit
+  stops it, as for every rule that cannot prove a loop is stuck.
 - Requires IPython 8.15 or newer. Older versions failed tests: with 7.x the
   recursion report does not appear in a kernel, and before 8.15
   `%reset -f out`, which `%autopsy memory` recommends, does not free memory.
@@ -78,6 +82,21 @@ Nothing yet.
 
 ### Fixed
 
+- `while i < n and data:` with a big list in `data` no longer slows down and
+  gets stopped: the other parts of an `and` were fingerprinted in full on every
+  check (0.3 s for 900,000 items), so a correct 2,000-round loop ran out of time.
+- An error in a `%%autopsy off` cell now fails the cell, so "Run All" stops
+  there. It used to report success.
+- `list(itertools.cycle([]))` is no longer called endless: an empty `cycle()`
+  ends at once.
+- The watchdog no longer interrupts an unrelated cell (such as a
+  `time.sleep(8)`) while a background asyncio task with a watched loop waits in
+  `await`.
+- `len()` is only taken of built-in containers during checks. A `for` loop over
+  a Dask DataFrame used to compute the whole frame on every check.
+- Notebook functions with a watched loop can be sent with cloudpickle again
+  (joblib, Dask, Ray, PySpark): the Monitor they refer to is sent as a
+  switched-off copy instead of failing on its locks and streams.
 - A loop inside a function whose condition uses a global (`while
   state['i'] < 5:`, or `global n` then `while n < 5:`) was stopped as
   "stuck" after 3 rounds with an empty explanation. Globals are now read
