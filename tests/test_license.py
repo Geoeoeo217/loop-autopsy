@@ -68,8 +68,8 @@ def test_license_holders_match_readme_team_table():
 
 def test_pyproject_declares_mit():
     text = read("pyproject.toml")
-    assert re.search(r'license\s*=\s*\{\s*text\s*=\s*"MIT"\s*\}', text)
-    assert "License :: OSI Approved :: MIT License" in text
+    assert re.search(r'^license\s*=\s*"MIT"\s*$', text, re.M)  # SPDX expression (setuptools >= 77)
+    assert "License :: OSI Approved" not in text  # the old classifier must not be used with it
 
 
 def test_readme_license_section_says_mit():
