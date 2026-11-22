@@ -46,3 +46,14 @@ def test_error_in_an_unwatched_cell_fails_the_cell(shell, capsys):
 def test_unwatched_cell_without_an_error_still_succeeds(shell):
     result = run(shell, "%%autopsy off\nq = 0\nwhile q < 1000:\n    q += 1\n")
     assert result.success and shell.user_ns["q"] == 1000
+
+
+def test_empty_cycle_is_not_called_endless(shell):
+    result = run(shell, "import itertools\nempty = list(itertools.cycle([]))\nalso = [v for v in itertools.cycle(())]")
+    assert result.error_in_exec is None
+    assert shell.user_ns["empty"] == [] and shell.user_ns["also"] == []
+
+
+def test_non_empty_cycle_is_still_stopped_before_it_starts(shell):
+    result = run(shell, "import itertools\nxs = list(itertools.cycle('ab'))")
+    assert result.error_in_exec is not None and result.error_in_exec.finding.kind == "endless"

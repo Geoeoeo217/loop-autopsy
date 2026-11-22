@@ -166,6 +166,18 @@ def _safely(state: LoopState, rule: str, check, *args):
         return None
 
 
+
+def _endless_now(iterable: Any) -> Tuple[Optional[str], Any]:
+    """``(kind, iterable)`` for an iterable about to be used up all at once. ``cycle()``
+    over nothing ends at once, and its type alone cannot tell, so peek at its first
+    item: an empty one is handed back as an empty iterator and gets no claim."""
+    kind = loop_notes.endless_iterable(iterable)
+    if kind == "itertools.cycle":
+        missing = object()
+        if next(iterable, missing) is missing:
+            return None, iter(())
+    return kind, iterable
+
 class Monitor:
     """One per IPython shell. Instrumented code calls it as ``__loop_autopsy__``."""
 
@@ -439,7 +451,7 @@ class Monitor:
             return iterable
         info = self.infos[loop_id]
         if not info.lazy:
-            kind = loop_notes.endless_iterable(iterable)
+            kind, iterable = _endless_now(iterable)
             if kind:
                 self._stop_now(info, detectors.endless_finding(info, kind))
         return self._items(loop_id, info, iter(iterable), _length(iterable))
@@ -455,10 +467,10 @@ class Monitor:
             return iterable
         info = self.infos[loop_id]
         if not info.lazy:
-            kind = loop_notes.endless_iterable(iterable)
+            kind, iterable = _endless_now(iterable)
             if kind:
                 self._stop_now(info, detectors.endless_finding(info, kind))
-        return self._items(loop_id, info, iterable, None)
+        return self._items(loop_id, info, iter(iterable), None)
 
     def _stop_now(self, info: LoopInfo, finding: Finding) -> None:
         state = LoopState(info, started=time.perf_counter(), replay_rows=self.settings.replay_rows)
