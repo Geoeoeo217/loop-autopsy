@@ -69,7 +69,7 @@ def test_nested_loops_keep_outer_repeat_safe():
 def test_while_else_keeps_its_else_block():
     infos, code = transform("while x < 3:\n    x += 1\nelse:\n    done = True\n")
     assert len(infos) == 1 and infos[0].compare == (("name", "x"), "<", ("const", 3))
-    assert code.rstrip().endswith("else:\n    done = True")
+    assert "    else:\n        done = True\nfinally:" in code  # the else block stays with its loop
     ast.parse(code)  # still valid Python
 
 

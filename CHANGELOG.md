@@ -31,10 +31,60 @@ Version numbers follow [Semantic Versioning](https://semver.org/).
   `growth_after`, `replay_rows` or `max_watched`, and memory fractions of 0
   or above 1 (`memory_stop=0` stopped every loop).
 
+- The replay table no longer keeps big strings, bytes or huge ints alive
+  after you delete them (a 150 MB bytes object stayed in memory). Stored
+  fingerprints of long strings use their length and hash, and fingerprints
+  of finished loops are dropped before the next cell.
+- One slow first round (loading a model, downloading a file) no longer makes
+  a fast `for` loop look like it needs hours: the estimate uses the speed of
+  the last second or two, not counting the first round.
+- Time spent waiting in `input()` or `getpass()` no longer counts towards
+  the time limit, also when the loop calls them through a helper function.
+- A loop changing more than `max_watched` variables was called "stuck" when
+  the one that changed was left out. The condition's names and the names
+  the loop changes are now watched first, and if a changing name still has
+  to be left out, the stuck and cycle rules are off for that loop.
+- A loop in a recursive function now keeps one record per run, so the time
+  limit stops a long recursive search (it ran 16 s with `time_limit=1`),
+  and the outer run's values no longer mix with the inner runs'.
+- Explaining a runaway recursion with a big list argument took about 6 s;
+  the same object is now fingerprinted once, with one budget for all calls.
+- Without psutil, macOS used the *peak* memory, so once a cell had used a
+  lot every later loop looked about to run out. Memory is now "unknown"
+  there; Windows reads its real figures itself. New `[memory]` extra
+  installs psutil.
+- Output with no newlines (`print(i, end=" ")` in a loop, or one huge
+  print) was never muted. A line now counts once per 1,000 characters.
+- `%%autopsy` with anything but `off` on its first line (such as the typo
+  `%%autopsy of`) skipped the cell with only a printed note; it is now an
+  error, so "Run All" stops there.
+- A loop stopped inside a thread shows its report instead of a raw
+  "Exception in thread" traceback. The same loop running in two threads at
+  once only uses the time and memory rules, since the runs' values could mix.
+- loop-autopsy no longer replaces another extension's custom exception
+  handler: exception types it does not handle are passed on to it.
+- `%autopsy memory` no longer calls `memory_usage()` on objects that are not
+  pandas (a Dask DataFrame would compute itself just to be measured).
+- `docs/extras.md` imported the extras from their old place; the examples
+  now use `loop_autopsy.extras.*`, and the docs say that the built-in
+  reports do not use them.
+
+### Changed
+
+- Requires IPython 8.15 or newer. Older versions failed tests: with 7.x the
+  recursion report does not appear in a kernel, and before 8.15
+  `%reset -f out`, which `%autopsy memory` recommends, does not free memory.
+- The version is written only in `src/loop_autopsy/__init__.py`;
+  `pyproject.toml` reads it from there.
+- The package ships `py.typed`, so type checkers use its type hints.
+
 ### Development
 
 - `tests/test_regressions.py`: one group of tests per bug above, run at
   the default thresholds.
+- CI also tests the oldest supported IPython, runs the tests against the
+  built wheel rather than the source folder, and runs `mypy`.
+- The `[test]` extra has lower bounds, and there is a `[typecheck]` extra.
 
 ## 0.4.0 (2026-11-22)
 

@@ -6,15 +6,18 @@ Owner: NATHANAEL George Steindhart.
 from __future__ import annotations
 
 import builtins
+import functools
+import getpass
 import os
 import re
 import sys
+import threading
 import time
 import types
 import weakref
 from collections import deque
 from contextlib import contextmanager
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from . import detectors, growth, loop_notes, recursion, report
 from .config import Finding, LoopInfo, LoopState, LoopStopped, Settings
@@ -23,6 +26,9 @@ from .transformer import RUNTIME_NAME
 _TIMEIT = re.compile(r"^\s*%%?timeit\b", re.MULTILINE)
 SLOW_GAP = 0.25  # seconds between checks before the stride is reduced
 INTERRUPT_WINDOW = 2.0  # seconds: a loop checked this recently is "the running loop"
+OUR_EXCEPTIONS = (LoopStopped, KeyboardInterrupt, RecursionError)
+# Functions that wait for the person at the keyboard; time spent in them is not loop time.
+_WAITS = ((builtins, "input"), (getpass, "getpass"))
 
 
 _PACKAGE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -45,7 +51,7 @@ def _skip(value: Any) -> bool:
 
 
 # Iterables whose len() is cheap and equals the number of rounds a for loop over them runs.
-_SIZED = (range, list, tuple, str, bytes, bytearray, dict, set, frozenset, deque,
+_SIZED: Tuple[type, ...] = (range, list, tuple, str, bytes, bytearray, dict, set, frozenset, deque,
           type({}.keys()), type({}.values()), type({}.items()))
 # NumPy arrays and pandas Series loop over their rows; a DataFrame loops over its column names, so it is left out.
 _SIZED_BY_NAME = {("numpy", "ndarray"), ("pandas", "Series")}
@@ -113,13 +119,20 @@ class Monitor:
         self.paused_cell = False
         self._pause_depth = 0
         self.stats: Dict[str, int] = {"loops": 0, "stopped": 0}
-        self.last: Optional[Tuple[Finding, LoopState, float]] = None
+        self.last: Optional[Tuple[Finding, LoopState, Optional[float]]] = None  # elapsed: None for recursion
         self.active: Optional[LoopState] = None
         self.active_time = 0.0
-        self._old_exc = None
+        self._old_exc: Optional[Tuple[tuple, Any]] = None
         self._noted: set = set()  # loop ids whose notes from the code were shown
         self._noted_endless: set = set()  # loop ids whose "never runs out" note was shown
         self._local_names: Dict[int, frozenset] = {}  # loop id -> names local to the code it sits in
+        # loop id -> the runs of that loop in progress, outermost first. More than one when the
+        # loop runs inside itself (a loop in a recursive function) or in several threads.
+        # Instrumented code drops a run from here when it ends (transformer._END).
+        self.stacks: Dict[int, List[LoopState]] = {}
+        self._begun: set = set()  # loop ids started since the last cell began
+        self.waited = 0.0  # seconds spent in input() / getpass() since loading
+        self._old_thread_hook: Optional[Callable[..., Any]] = None
 
     # ------------------------------------------------------------------ transformer side
     def register(self, info: LoopInfo) -> int:
@@ -154,6 +167,51 @@ class Monitor:
         self.paused_cell = bool(_TIMEIT.search(raw))
         self.active = None
         self.restore_runtime()
+        self.time_waits()
+        self._trim_finished()
+
+    def _trim_finished(self) -> None:
+        """Drop the stored fingerprints of loop runs that have ended: the last run of
+        each loop is kept for its report, but its fingerprints are no longer needed and
+        can hold up to a few million elements."""
+        for loop_id in self._begun:
+            state = self._state(loop_id)
+            if state is not None and not self.stacks.get(loop_id):
+                for key in ("rep_seen", "rep_full", "rep_stored"):
+                    state.scratch.pop(key, None)
+        self._begun.clear()
+
+    # ------------------------------------------------------------------ waiting for the user
+    def time_waits(self) -> None:
+        """Wrap ``input()`` and ``getpass()`` so the time a loop spends waiting for the
+        person at the keyboard does not count towards its time limit, also when it
+        calls them through a helper function. ipykernel installs its own ``input`` for
+        every cell, so this runs before each cell."""
+        for owner, name in _WAITS:
+            func = getattr(owner, name, None)
+            if func is not None and not getattr(func, "__loop_autopsy_wait__", False):
+                setattr(owner, name, self._timed(func))
+
+    def untime_waits(self) -> None:
+        for owner, name in _WAITS:
+            func = getattr(owner, name, None)
+            if getattr(func, "__loop_autopsy_wait__", False) and getattr(func, "__self_monitor__", None) is self:
+                setattr(owner, name, getattr(func, "__wrapped__"))
+
+    def _timed(self, func):
+        monitor = self
+
+        @functools.wraps(func)
+        def waiting(*args, **kwargs):
+            start = time.perf_counter()
+            try:
+                return func(*args, **kwargs)
+            finally:
+                monitor.waited += time.perf_counter() - start
+
+        waiting.__loop_autopsy_wait__ = True  # type: ignore[attr-defined]
+        waiting.__self_monitor__ = self  # type: ignore[attr-defined]
+        return waiting
 
     def restore_runtime(self) -> None:
         """Put ``__loop_autopsy__`` back if ``%reset`` (or ``del``) removed it: every
@@ -172,8 +230,17 @@ class Monitor:
             return  # a loop this monitor never registered: it runs unwatched
         self._sync_states()
         info = self.infos[loop_id]
-        self.states[loop_id] = LoopState(info, started=time.perf_counter(),
-                                         replay_rows=self.settings.replay_rows)
+        state = LoopState(info, started=time.perf_counter(), replay_rows=self.settings.replay_rows)
+        thread = threading.get_ident()
+        state.scratch["thread"], state.scratch["waited0"] = thread, self.waited
+        stack = self.stacks.setdefault(loop_id, [])
+        if stack and stack[-1].scratch.get("thread") != thread:
+            # The same loop running in two threads at once: its checks could mix both
+            # runs' values, so only the time and memory rules are used for them.
+            state.scratch["shared"] = stack[-1].scratch["shared"] = True
+        stack.append(state)
+        self.states[loop_id] = state
+        self._begun.add(loop_id)
         self.stats["loops"] += 1
         endless = info.always_true and not info.exits
         if (endless or info.notes) and self.enabled and loop_id not in self._noted:
@@ -229,20 +296,25 @@ class Monitor:
             state.stride = base if gap <= SLOW_GAP else max(1, min(base, state.stride) // 4)
 
         settings = self.settings
-        finding = (_safely(state, "repeat", detectors.check_repeat, info, state, values)
-                   or _safely(state, "direction", detectors.check_direction, info, state, values, settings)
-                   or _safely(state, "growing", growth.check_growing_iterable, info, state, values, settings))
+        finding = None
+        if not state.scratch.get("shared"):
+            finding = (_safely(state, "repeat", detectors.check_repeat, info, state, values)
+                       or _safely(state, "direction", detectors.check_direction, info, state, values, settings)
+                       or _safely(state, "growing", growth.check_growing_iterable, info, state, values, settings))
         if finding is None and state.checks % 16 == 0:
             finding = _safely(state, "memory", growth.check_memory, info, state, values, settings)
         if finding is None:
-            finding = (_safely(state, "estimate", detectors.check_estimate, info, state, settings, now)
-                       or _safely(state, "time", detectors.check_time, info, state, settings, now))
+            loop_now = now - (self.waited - state.scratch.get("waited0", self.waited))  # minus input() time
+            finding = (_safely(state, "estimate", detectors.check_estimate, info, state, settings, loop_now)
+                       or _safely(state, "time", detectors.check_time, info, state, settings, loop_now))
         state.next_check = state.rounds + state.stride
         if finding is not None:
             state.stopped = finding
             self.stats["stopped"] += 1
             self.last = (finding, state, now - state.started)
-            raise LoopStopped(finding)
+            stopped = LoopStopped(finding)
+            stopped.report = self.last  # type: ignore[attr-defined]  # for a loop stopped in a thread
+            raise stopped
 
     def _values(self, loop_id: int, info: LoopInfo, state: LoopState, namespace: Dict[str, Any],
                 global_ns: Optional[Dict[str, Any]]) -> Dict[str, Any]:
@@ -291,10 +363,19 @@ class Monitor:
         return True
 
     def install_exception_handler(self) -> None:
-        self._old_exc = (self.shell.custom_exceptions, getattr(self.shell, "CustomTB", None))
-        self.shell.set_custom_exc((LoopStopped, KeyboardInterrupt, RecursionError), self._handle)
+        """Show reports for our exceptions. A handler another extension installed
+        before us keeps working: its exception types are still sent to it."""
+        old_types = tuple(self.shell.custom_exceptions or ())
+        self._old_exc = (old_types, getattr(self.shell, "CustomTB", None))
+        self.shell.set_custom_exc(OUR_EXCEPTIONS + tuple(t for t in old_types if t not in OUR_EXCEPTIONS),
+                                  self._handle)
+        self._old_thread_hook = threading.excepthook
+        threading.excepthook = self._thread_hook
 
     def remove_exception_handler(self) -> None:
+        if threading.excepthook == self._thread_hook and self._old_thread_hook is not None:
+            threading.excepthook = self._old_thread_hook
+        self._old_thread_hook = None
         if self._old_exc is None:
             return
         old_tuple, old_tb = self._old_exc
@@ -303,14 +384,41 @@ class Monitor:
             self.shell.CustomTB = old_tb
         self._old_exc = None
 
+    def _thread_hook(self, args) -> None:
+        """A loop stopped inside a thread: show its report instead of a raw
+        "Exception in thread" traceback through loop-autopsy's code."""
+        stopped = args.exc_value
+        saved = getattr(stopped, "report", None)
+        if isinstance(stopped, LoopStopped) and saved:
+            finding, state, elapsed = saved
+            report.display_report(report.render_text(finding, state, elapsed),
+                                  report.render_html(finding, state, elapsed))
+            return
+        (self._old_thread_hook or threading.__excepthook__)(args)
+
+    def _delegate(self, etype) -> Optional[Any]:
+        """The handler that was installed before us, if it handles ``etype``."""
+        if self._old_exc is None:
+            return None
+        old_types, old_tb = self._old_exc
+        return old_tb if old_tb is not None and etype in old_types else None
+
     def _handle(self, shell, etype, value, tb, tb_offset=None):
+        if not issubclass(etype, OUR_EXCEPTIONS):
+            old = self._delegate(etype)
+            return old(etype, value, tb, tb_offset=tb_offset) if old is not None else None
         if issubclass(etype, LoopStopped):
             self.show_last()
             return []
         if issubclass(etype, RecursionError):
             return self._handle_recursion(shell, etype, value, tb, tb_offset)
-        # KeyboardInterrupt: keep IPython's normal message, then add the replay.
-        shell.showtraceback((etype, value, _without_our_frames(tb)), tb_offset=tb_offset)
+        # KeyboardInterrupt: keep the normal message (or the earlier handler's), then add the replay.
+        old = self._delegate(etype)
+        stb: Any = []
+        if old is not None:
+            stb = old(etype, value, tb, tb_offset=tb_offset)
+        else:
+            shell.showtraceback((etype, value, _without_our_frames(tb)), tb_offset=tb_offset)
         state = self.active
         if (state is not None and state.stopped is None and state.history
                 and time.perf_counter() - self.active_time < INTERRUPT_WINDOW):
@@ -319,7 +427,7 @@ class Monitor:
             self.last = (finding, state, elapsed)
             report.display_report(report.render_text(finding, state, elapsed),
                                   report.render_html(finding, state, elapsed))
-        return []
+        return stb
 
     def _handle_recursion(self, shell, etype, value, tb, tb_offset=None):
         """Replace the long RecursionError traceback with a report, when the
@@ -331,6 +439,9 @@ class Monitor:
             except Exception:  # never let the explanation hide the real error
                 explained = None
         if explained is None:
+            old = self._delegate(etype)
+            if old is not None:
+                return old(etype, value, tb, tb_offset=tb_offset)
             shell.showtraceback((etype, value, _without_our_frames(tb)), tb_offset=tb_offset)
             return []
         finding, state = explained

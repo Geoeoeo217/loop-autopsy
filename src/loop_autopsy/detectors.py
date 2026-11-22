@@ -21,6 +21,7 @@ SCALARS = (bool, int, float, complex, Fraction, Decimal)
 SMALL = 50  # containers up to this size are fingerprinted by content
 MAX_STORED = 50_000  # fingerprints kept per loop run
 FULL_BUDGET = 1_000_000  # elements visited by one full fingerprint
+LONG_TEXT = 1000  # longer str/bytes are fingerprinted by length and hash
 STORED_ELEMENTS = 2_000_000  # elements kept across all stored full fingerprints of one loop run
 # Methods on these types only change the object itself, which is fingerprinted.
 BUILTIN_RECEIVERS = (str, bytes, list, dict, set, frozenset, tuple, deque, bytearray, int, float, complex)
@@ -59,6 +60,10 @@ def full_fp(value: Any, budget: Optional[list] = None, depth: int = 0) -> Any:
     if budget is None:
         budget = [FULL_BUDGET]
     t = type(value)
+    if t in (str, bytes) and len(value) > LONG_TEXT:
+        # Stored fingerprints must not keep a big string alive. String hashes are
+        # randomised (SipHash), so unlike small ints, unequal strings do not collide.
+        return (t.__name__, len(value), hash(value))
     if value is None or t in SCALARS or t in (str, bytes):
         return value
     if t is range:
@@ -103,6 +108,9 @@ def check_repeat(info: LoopInfo, state: LoopState, values: Dict[str, Any]) -> Op
     """R1 stuck / R2 cycle: the loop returned to an exact earlier state."""
     s = state.scratch
     if info.kind != "while" or not info.repeat_safe or s.get("rep_off"):
+        return None
+    if info.unwatched_changes:  # a changing variable is not watched: "nothing changed" is no proof
+        s["rep_off"] = "partial"
         return None
     for name in info.receivers:  # e.g. random.random(): hidden state, cannot prove anything
         if type(values.get(name, OPAQUE)) not in BUILTIN_RECEIVERS:
@@ -254,7 +262,7 @@ def _moving_away(s: dict, prefix: str, size: Any, rounds: int) -> bool:
     if prev is None or not size > prev:
         s.pop(prefix + "step", None)
         return False
-    step, span = size - prev, rounds - prev_round
+    step, span = size - prev, rounds - (prev_round or 0)
     before = s.get(prefix + "step")
     s[prefix + "step"] = (step, span)
     if before is not None and before[1] == span and _shrank(step, before[0]):
@@ -389,6 +397,8 @@ def _other_side(side, value) -> str:
 
 # --------------------------------------------------------------------------- R8
 ESTIMATE_MARGIN = 2.0  # stop early only when the estimate is at least this many times the time limit
+ESTIMATE_WINDOW = 1.0  # seconds: the speed is measured over the last one to two of these
+ESTIMATE_MIN_ROUNDS = 100  # rounds finished before the average since the start is trusted on its own
 
 
 def duration(seconds: float) -> str:
@@ -411,6 +421,22 @@ def _progress(state: LoopState) -> Optional[tuple]:
     return done, total, (f"{share:.1%}" if share >= 0.001 else "less than 0.1%")
 
 
+def _recent_speed(s: dict, now: float, done: int) -> Optional[float]:
+    """Seconds per round over the last second or two, measured from rounds that
+    finished after the first one: a slow first round (a model loading, a file
+    downloading) must not make a fast loop look slow."""
+    older, newer = s.get("est_a"), s.get("est_b")
+    if newer is None:
+        s["est_b"] = (now, done)
+    elif now - newer[0] >= ESTIMATE_WINDOW:
+        s["est_a"], s["est_b"] = newer, (now, done)
+        older = newer
+    ref = older or newer
+    if ref is None or done <= ref[1] or now <= ref[0]:
+        return None
+    return (now - ref[0]) / (done - ref[1])
+
+
 def check_estimate(info: LoopInfo, state: LoopState, settings: Settings, now: float) -> Optional[Finding]:
     """R8: a for loop that, at its current speed, needs far longer than the time limit.
 
@@ -422,14 +448,20 @@ def check_estimate(info: LoopInfo, state: LoopState, settings: Settings, now: fl
     if (info.kind != "for" or info.exits or info.waits_for_user
             or settings.time_limit <= 0 or settings.estimate_after <= 0):
         return None
-    elapsed = now - state.started
-    if elapsed < settings.estimate_after or elapsed >= settings.time_limit:
-        return None
     progress = _progress(state)
     if progress is None:
         return None
     done, total, share = progress
-    needed = elapsed * total / done
+    per_round = _recent_speed(state.scratch, now, done)
+    elapsed = now - state.started
+    if elapsed < settings.estimate_after or elapsed >= settings.time_limit:
+        return None
+    if per_round is not None:
+        needed = elapsed + (total - done) * per_round
+    elif done >= ESTIMATE_MIN_ROUNDS:
+        needed = elapsed * total / done
+    else:
+        return None  # a few slow first rounds may just be warming up (loading, downloading)
     if needed < ESTIMATE_MARGIN * settings.time_limit:
         return None
     allow = int(math.ceil(needed * 1.25 / 60) * 60)
@@ -457,6 +489,9 @@ def check_time(info: LoopInfo, state: LoopState, settings: Settings, now: float)
     off = state.scratch.get("rep_off")
     if info.kind == "while" and (not info.repeat_safe or off == "calls"):
         reason = " (it calls functions whose effects loop-autopsy cannot check)"
+    elif info.kind == "while" and off == "partial":
+        reason = (f" (it changes more variables than the {settings.max_watched} loop-autopsy watches; "
+                  f"see `max_watched`)")
     elif info.kind == "while" and off:
         reason = " (it uses values loop-autopsy cannot look inside)"
     extra = ""

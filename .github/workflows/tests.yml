@@ -50,6 +50,38 @@ jobs:
         env:
           PYTHONIOENCODING: utf-8
 
+  oldest:
+    # The oldest IPython that pyproject.toml allows, so the lower bound is a tested promise.
+    name: Oldest supported IPython
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.9"
+
+      - name: Install loop-autopsy with the oldest IPython it allows
+        run: python -m pip install -e ".[test]" "ipython==8.15.*"
+
+      - name: Run the tests
+        run: python -m pytest -rs
+
+  typecheck:
+    name: Type check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Run mypy
+        run: |
+          python -m pip install -e ".[typecheck]"
+          python -m mypy
+
   build:
     name: Build the package
     runs-on: ubuntu-latest
@@ -65,3 +97,12 @@ jobs:
           python -m pip install build twine
           python -m build
           python -m twine check dist/*
+
+      - name: Run the tests against the built wheel, not the source folder
+        # -o pythonpath=tests drops src/ from the path, so `import loop_autopsy`
+        # finds the installed wheel: a file missing from the wheel fails here.
+        run: |
+          python -m venv /tmp/wheel-env
+          /tmp/wheel-env/bin/python -m pip install dist/*.whl pytest nbclient ipykernel
+          /tmp/wheel-env/bin/python -m pytest -rs -o pythonpath=tests -p no:cacheprovider
+          /tmp/wheel-env/bin/python -c "import loop_autopsy, pathlib; assert (pathlib.Path(loop_autopsy.__file__).parent / 'py.typed').exists()"

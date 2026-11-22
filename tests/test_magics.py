@@ -82,10 +82,12 @@ def test_cell_magic_off_runs_the_cell_unwatched(shell):
     assert isinstance(shell.run_cell("y = 1\nwhile y <= 5:\n    pass\n").error_in_exec, LoopStopped)
 
 
-def test_cell_magic_with_another_word_does_not_run_the_cell(shell, capsys):
-    out = out_of(shell, capsys, "%%autopsy on\nran_anyway = True\n")
-    assert "Use %%autopsy off on the first line of a cell" in out
-    assert "ran_anyway" not in shell.user_ns
+def test_cell_magic_with_another_word_does_not_run_the_cell(shell):
+    for first_line in ("%%autopsy on", "%%autopsy of", "%%autopsy"):  # "of": a typo for "off"
+        result = shell.run_cell(first_line + "\nran_anyway = True\n")
+        assert type(result.error_in_exec).__name__ == "UsageError"  # an error, so Run All stops here
+        assert "The cell was not run" in str(result.error_in_exec)
+        assert "ran_anyway" not in shell.user_ns
 
 
 def test_summary_without_cell_health_shows_help(shell, capsys):

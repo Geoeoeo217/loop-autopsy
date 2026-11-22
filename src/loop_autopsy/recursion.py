@@ -20,7 +20,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 from . import report
 from .config import Finding, LoopInfo, LoopState
-from .detectors import OPAQUE, full_fp
+from .detectors import FULL_BUDGET, OPAQUE, full_fp
 
 MIN_CALLS = 50  # fewer nested calls than this is not "runaway"
 COMPANION_SHARE = 0.25  # other functions with this share of calls take part (mutual recursion)
@@ -64,7 +64,7 @@ def find_recursion(tb, is_cell: Callable[[str], bool]):
 
 
 # --------------------------------------------------------------------------- analysis
-def _measure(value: Any) -> Optional[Tuple[float, str]]:
+def _measure(value: Any) -> Optional[Tuple[Any, str]]:
     """A number to follow for one argument: the value itself, or a container's length."""
     if isinstance(value, (int, float, Fraction, Decimal)) and not isinstance(value, bool):
         return value, ""
@@ -90,6 +90,26 @@ def _cycle_length(fps: Sequence[Any]) -> int:
     return 0
 
 
+def _fingerprints(calls: List[Dict[str, Any]]) -> List[tuple]:
+    """Fingerprints of every call's arguments, sharing one budget for all of them.
+
+    The same object passed down every call (``f(lst)``) is fingerprinted once,
+    so a deep recursion over a big list stays fast; many different big
+    arguments run out of budget and are treated as unreadable instead.
+    """
+    budget, seen = [FULL_BUDGET], {}
+    result = []
+    for call in calls:
+        parts = []
+        for k, v in call.items():
+            key = id(v)
+            if key not in seen:
+                seen[key] = full_fp(v, budget)
+            parts.append((k, seen[key]))
+        result.append(tuple(parts))
+    return result
+
+
 def analyse(name: str, calls: List[Dict[str, Any]], companions: Tuple[str, ...] = (),
             limit: Optional[int] = None) -> Finding:
     """Explain why ``name`` never stopped calling itself.
@@ -109,7 +129,7 @@ def analyse(name: str, calls: List[Dict[str, Any]], companions: Tuple[str, ...] 
                  f"{who} again. Check that it exists and that each call moves the arguments closer to it.")
     names = tuple(calls[0]) if calls else ()
 
-    fps = [tuple((k, full_fp(v)) for k, v in c.items()) for c in calls]
+    fps = _fingerprints(calls)
     readable = all(fp is not OPAQUE for call in fps for _, fp in call)
     if readable and n >= 2 and all(fp == fps[0] for fp in fps):
         if not names:
@@ -133,8 +153,9 @@ def analyse(name: str, calls: List[Dict[str, Any]], companions: Tuple[str, ...] 
                 "Look at the table: the arguments repeat instead of moving towards the base case.", names)
 
     for arg in names:
-        measured = [_measure(c.get(arg)) for c in calls]
-        if any(m is None for m in measured) or n < 3:
+        maybe = [_measure(c.get(arg)) for c in calls]
+        measured = [m for m in maybe if m is not None]
+        if len(measured) < len(maybe) or n < 3:
             continue
         values = [m[0] for m in measured]
         label = f"{measured[0][1]}`{arg}`"

@@ -85,7 +85,7 @@ def memory_limit(refresh: bool = False) -> Optional[int]:
             try:
                 limit = os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
             except (ValueError, OSError, AttributeError):
-                limit = None
+                limit = _windows_total_memory() if sys.platform == "win32" else None
     _limit_cache[:] = [limit]
     return limit
 
@@ -104,12 +104,58 @@ def current_rss() -> Optional[int]:
         return int(psutil.Process().memory_info().rss)
     except Exception:
         pass
-    try:
-        import resource
+    if sys.platform == "win32":
+        return _windows_rss()
+    # resource.getrusage() only gives the *peak* memory, which never goes down: once a
+    # cell had used a lot, every later loop would look about to run out. Unknown is
+    # better than wrong (install psutil: pip install "loop-autopsy[memory]").
+    return None
 
-        peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-        return peak if sys.platform == "darwin" else peak * 1024
-    except Exception:  # pragma: no cover
+
+def _windows_rss() -> Optional[int]:
+    """This process's working set (what psutil calls rss on Windows), without psutil."""
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        class Counters(ctypes.Structure):
+            _fields_ = [("cb", wintypes.DWORD), ("PageFaultCount", wintypes.DWORD)] + [
+                (name, ctypes.c_size_t) for name in (
+                    "PeakWorkingSetSize", "WorkingSetSize", "QuotaPeakPagedPoolUsage", "QuotaPagedPoolUsage",
+                    "QuotaPeakNonPagedPoolUsage", "QuotaNonPagedPoolUsage", "PagefileUsage", "PeakPagefileUsage")]
+
+        kernel32 = ctypes.WinDLL("kernel32")  # type: ignore[attr-defined]
+        kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+        get_info = kernel32.K32GetProcessMemoryInfo
+        get_info.argtypes = [wintypes.HANDLE, ctypes.POINTER(Counters), wintypes.DWORD]
+        get_info.restype = wintypes.BOOL
+        counters = Counters()
+        counters.cb = ctypes.sizeof(Counters)
+        if not get_info(kernel32.GetCurrentProcess(), ctypes.byref(counters), counters.cb):
+            return None
+        return int(counters.WorkingSetSize)
+    except Exception:
+        return None
+
+
+def _windows_total_memory() -> Optional[int]:
+    """Physical RAM on Windows, without psutil."""
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        class Status(ctypes.Structure):
+            _fields_ = [("dwLength", wintypes.DWORD), ("dwMemoryLoad", wintypes.DWORD)] + [
+                (name, ctypes.c_ulonglong) for name in (
+                    "ullTotalPhys", "ullAvailPhys", "ullTotalPageFile", "ullAvailPageFile",
+                    "ullTotalVirtual", "ullAvailVirtual", "ullAvailExtendedVirtual")]
+
+        status = Status()
+        status.dwLength = ctypes.sizeof(Status)
+        if not ctypes.WinDLL("kernel32").GlobalMemoryStatusEx(ctypes.byref(status)):  # type: ignore[attr-defined]
+            return None
+        return int(status.ullTotalPhys)
+    except Exception:
         return None
 
 
@@ -163,12 +209,14 @@ def _slot_values(value: Any) -> List[Any]:
 def _deep_size(value: Any, depth: int, budget: List[int]) -> float:
     import types
 
-    if hasattr(value, "memory_usage") and callable(value.memory_usage):  # pandas
+    # pandas only: memory_usage() on another library's object can run real work
+    # (a Dask DataFrame would compute itself just to be measured).
+    if type(value).__module__.split(".")[0] == "pandas" and callable(getattr(value, "memory_usage", None)):
         usage = value.memory_usage(deep=True)
         return usage.sum() if hasattr(usage, "sum") else usage
     if hasattr(value, "nbytes") and isinstance(getattr(value, "nbytes"), int):  # NumPy
         return value.nbytes
-    base = sys.getsizeof(value)
+    base: float = sys.getsizeof(value)
     budget[0] -= 1
     if budget[0] < 0 or depth >= len(_SAMPLE_BY_DEPTH):
         return base  # nested too deep, or already looked at enough: count this one shallowly

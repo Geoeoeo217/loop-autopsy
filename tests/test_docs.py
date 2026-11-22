@@ -28,10 +28,12 @@ def table_rows(text: str):
     return [r for r in rows[1:] if not set("".join(r)) <= set("-: ")]
 
 
-def test_version_is_the_same_everywhere():
-    declared = re.search(r'^version\s*=\s*"([^"]+)"', read("pyproject.toml"), re.M).group(1)
-    assert loop_autopsy.__version__ == declared, (
-        "pyproject.toml and src/loop_autopsy/__init__.py disagree about the version")
+def test_version_is_written_in_one_place():
+    text = read("pyproject.toml")
+    assert not re.search(r'^version\s*=\s*"', text, re.M), "the version belongs in __init__.py only"
+    assert re.search(r'^dynamic\s*=\s*\["version"\]', text, re.M)
+    assert re.search(r'^version\s*=\s*\{\s*attr\s*=\s*"loop_autopsy.__version__"\s*\}', text, re.M)
+    assert re.fullmatch(r"\d+\.\d+\.\d+", loop_autopsy.__version__)
 
 
 def test_readme_settings_table_matches_the_real_defaults():

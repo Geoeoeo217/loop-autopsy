@@ -164,6 +164,7 @@ def test_memory_limit_without_psutil(monkeypatch, fresh_limit):
         raise ValueError(name)
 
     monkeypatch.setattr(os, "sysconf", unsupported, raising=False)
+    monkeypatch.setattr(growth, "_windows_total_memory", lambda: None)
     assert growth.memory_limit(refresh=True) is None  # nothing works: say "unknown", do not crash
 
 
@@ -180,15 +181,29 @@ def test_current_rss_falls_back_to_psutil(monkeypatch):
     assert growth.current_rss() == 77_000_000
 
 
-@pytest.mark.parametrize("platform, expected", [("darwin", 5000), ("linux", 5000 * 1024)])
-def test_current_rss_falls_back_to_resource(monkeypatch, platform, expected):
+@pytest.mark.parametrize("platform", ["darwin", "linux"])
+def test_current_rss_never_reports_peak_memory(monkeypatch, platform):
     fake_proc_statm(monkeypatch, "garbage")  # unreadable numbers are skipped too
     no_psutil(monkeypatch)
-    usage = types.SimpleNamespace(ru_maxrss=5000)  # bytes on macOS, kilobytes on Linux
+    usage = types.SimpleNamespace(ru_maxrss=5000)  # the peak: it never goes down
     monkeypatch.setitem(sys.modules, "resource", types.SimpleNamespace(
         RUSAGE_SELF=0, getrusage=lambda who: usage))
     monkeypatch.setattr(sys, "platform", platform)
-    assert growth.current_rss() == expected
+    assert growth.current_rss() is None  # unknown, not "always at the peak"
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows memory functions")
+def test_windows_memory_without_psutil(monkeypatch, fresh_limit):
+    fake_proc_statm(monkeypatch, None)
+    no_psutil(monkeypatch)
+    monkeypatch.setattr(growth, "_read_int", lambda path: None)
+    rss, total = growth.current_rss(), growth.memory_limit(refresh=True)
+    assert rss and total and 1_000_000 < rss < total
+
+
+def test_windows_readers_fail_quietly_elsewhere():
+    if sys.platform != "win32":  # no kernel32 here: "unknown", never an error
+        assert growth._windows_rss() is None and growth._windows_total_memory() is None
 
 
 def test_memory_fraction(monkeypatch):
@@ -214,9 +229,18 @@ def test_size_of_pandas_and_numpy_like_objects():
     class Array:  # like a NumPy array
         nbytes = 8000
 
+    Frame.__module__ = Series.__module__ = "pandas.core.frame"  # memory_usage() is only trusted from pandas
     assert growth.size_of(Frame()) == 4096
     assert growth.size_of(Series()) == 512
     assert growth.size_of(Array()) == 8000
+
+
+def test_size_of_never_calls_memory_usage_outside_pandas():
+    class LazyFrame:  # like a Dask DataFrame: memory_usage() would compute the whole frame
+        def memory_usage(self, deep=False):
+            raise AssertionError("memory_usage() must not be called")
+
+    assert growth.size_of(LazyFrame()) > 0
 
 
 def test_size_of_containers_counts_their_items():
@@ -237,6 +261,8 @@ def test_size_of_never_raises():
     class Broken:
         def memory_usage(self, deep=False):
             raise RuntimeError("no size for you")
+
+    Broken.__module__ = "pandas.core.frame"
 
     assert growth.size_of(Broken()) == 0
 

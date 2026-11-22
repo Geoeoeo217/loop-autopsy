@@ -13,13 +13,15 @@ The modules below are small, self-contained helpers around the report. They chan
 
 All four use only the Python standard library and do not import other `loop_autopsy` modules, so they can be used or ignored independently.
 
+They are helpers you call from your own code. The reports loop-autopsy shows by itself do not use them: they are always in English with the default colours, and there is no `%autopsy config` setting for a theme or a language.
+
 ## Examples
 
 ```python
-from loop_autopsy.report_theme import get_theme
-from loop_autopsy.report_i18n import message
-from loop_autopsy.report_export import export_text
-from loop_autopsy.sparkline import sparkline_line, sparkline_svg
+from loop_autopsy.extras.report_theme import get_theme
+from loop_autopsy.extras.report_i18n import message
+from loop_autopsy.extras.report_export import export_text
+from loop_autopsy.extras.sparkline import sparkline_line, sparkline_svg
 
 theme = get_theme("dark")                  # colours for the HTML report
 message("hint", "id")                      # Indonesian label

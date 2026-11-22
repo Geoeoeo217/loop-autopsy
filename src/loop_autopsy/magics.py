@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from difflib import get_close_matches
+from typing import Optional
 
+from IPython.core.error import UsageError
 from IPython.core.magic import Magics, line_cell_magic, magics_class
 
 from . import growth
@@ -38,15 +40,19 @@ class AutopsyMagics(Magics):
         self.health = health  # CellHealth, for %autopsy summary
 
     @line_cell_magic
-    def autopsy(self, line: str, cell: str = None):
+    def autopsy(self, line: str, cell: Optional[str] = None):
         args = line.split()
         if cell is not None:
             if args[:1] == ["off"]:
+                assert self.shell is not None
                 with self.monitor.paused():
                     self.shell.run_cell(cell, store_history=False)
                 return None
-            print("Use %%autopsy off on the first line of a cell to run it without loop watching.")
-            return None
+            # An error, not just a message: a typo such as "%%autopsy of" must not quietly
+            # skip the cell while "Run All" carries on as if it had run.
+            given = f" (it says '{line.strip()}')" if line.strip() else ""
+            raise UsageError("The cell was not run. Use %%autopsy off on the first line of a cell "
+                             f"to run it without loop watching{given}.")
 
         command = args[0].lower() if args else "status"
         settings = self.monitor.settings
@@ -76,6 +82,7 @@ class AutopsyMagics(Magics):
             except ValueError:
                 print("Usage: %autopsy memory [number of variables to show]")
                 return None
+            assert self.shell is not None
             print(growth.memory_overview(self.shell.user_ns, top))
         elif command == "config":
             if len(args) == 1:

@@ -58,6 +58,7 @@ class LoopInfo:
     notes: Tuple[str, ...] = ()  # read from the code (loop_notes.py); shown once when the loop starts
     outside_update: Optional[Tuple[str, int, str]] = None  # (name, line, code): its update sits after the loop
     branch_updates: Tuple[Any, ...] = ()  # loop_notes.BranchUpdate: its updates sit inside an if
+    unwatched_changes: bool = False  # a variable the loop changes was left out by max_watched
 
 
 @dataclass

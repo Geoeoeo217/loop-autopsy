@@ -44,6 +44,7 @@ class OutputGuard:
     NOTICE = ("\n[loop-autopsy] Output muted after {n:,} lines to keep your browser responsive. "
               "The cell is still running; a stuck loop will still be stopped.\n")
     MAX_PARTIAL = 2000  # characters kept of a muted line that has not ended yet
+    LINE_CHARS = 1000  # a long line counts once per this many characters (print(x, end=" ") in a loop)
 
     def __init__(self, stream, max_lines: int, tail_lines: int = 0):
         self._stream = stream
@@ -55,25 +56,48 @@ class OutputGuard:
         self.hidden = 0  # complete lines muted since the last flush
         self._tail: Deque[str] = deque(maxlen=tail_lines)
         self._partial = ""  # a muted line still being written (no newline yet)
+        self._run = 0  # characters written since the last counted line
 
     def write(self, text: str) -> int:
         if self.muted:
             self._hide(text)
             return len(text)
-        newlines = text.count("\n")
-        if self.max_lines and self.lines + newlines >= self.max_lines:
-            keep = self.max_lines - self.lines
-            cut = 0
-            for _ in range(keep):
-                cut = text.index("\n", cut) + 1
+        if not self.max_lines:
+            return self._stream.write(text)
+        cut, lines, run = self._scan(text, self.max_lines - self.lines)
+        if cut is not None:
             self._stream.write(text[:cut])
             self._stream.write(self.NOTICE.format(n=self.max_lines))
             self.lines = self.max_lines
             self.muted = True
             self._hide(text[cut:])
             return len(text)
-        self.lines += newlines
+        self.lines += lines
+        self._run = run
         return self._stream.write(text)
+
+    def _scan(self, text: str, budget: int):
+        """Count the lines in ``text``: each newline, and each ``LINE_CHARS``
+        characters without one. Returns ``(cut, lines, run)``: ``cut`` is where
+        the ``budget``-th line ends (``None`` if it is not reached)."""
+        width, run, lines, pos, n = self.LINE_CHARS, self._run, 0, 0, len(text)
+        if "\n" not in text and run + n < width:
+            return None, 0, run + n  # the common case: a short piece of a line
+        while pos < n:
+            newline = text.find("\n", pos)
+            end = n if newline < 0 else newline
+            while run + (end - pos) >= width:  # a long stretch without a newline
+                pos += width - run
+                run, lines = 0, lines + 1
+                if lines >= budget:
+                    return pos, lines, run
+            run += end - pos
+            pos = end
+            if newline >= 0:
+                pos, run, lines = newline + 1, 0, lines + 1
+                if lines >= budget:
+                    return pos, lines, run
+        return None, lines, run
 
     def _hide(self, text: str) -> None:
         """Remember the end of muted output for ``flush_tail``."""
@@ -101,7 +125,7 @@ class OutputGuard:
     def reset(self) -> None:
         """Start counting again (the output area was cleared, so the muted
         lines from before are no longer wanted either)."""
-        self.lines, self.muted = 0, False
+        self.lines, self.muted, self._run = 0, False, 0
         self._tail.clear()
         self._partial, self.hidden = "", 0
 
@@ -421,11 +445,11 @@ class CellHealth:
         self._guard: Optional[OutputGuard] = None  # sys.stdout
         self._err_guard: Optional[OutputGuard] = None  # sys.stderr
         self._display_guard: Optional[DisplayGuard] = None  # display()
-        self._clear_hook = None
-        self._traceback_hook = None
+        self._clear_hook: Optional[Callable[..., Any]] = None
+        self._traceback_hook: Optional[Callable[..., Any]] = None
         self._was_muted = False  # a guard muted output earlier in this cell
-        self._saved_stdout = None
-        self._saved_stderr = None
+        self._saved_stdout: Any = None
+        self._saved_stderr: Any = None
 
     def register(self) -> None:
         self.shell.events.register("pre_run_cell", self.pre_run_cell)

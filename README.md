@@ -185,7 +185,11 @@ Plus four extras:
 pip install loop-autopsy
 ```
 
-The only requirement is IPython (already present in Jupyter). Python 3.9+.
+The only requirement is IPython 8.15 or newer (already present in Jupyter). Python 3.9+.
+
+For exact memory readings on macOS and some servers, also install psutil:
+`pip install "loop-autopsy[memory]"`. Without it, memory is read from Linux's
+`/proc` or Windows itself; on macOS the memory features are then off.
 
 In a notebook:
 
@@ -294,11 +298,11 @@ Change any of these with `%autopsy config key=value` (for example `%autopsy conf
 | `growth_after` | 2000 | rounds before a growing list in a `for` loop is reported |
 | `memory_stop` | 0.85 | stop a loop when memory reaches this fraction of the limit |
 | `memory_warn` | 0.75 | health bar warning at this fraction of the limit |
-| `max_output_lines` | 1000 | printed lines per cell before output is muted, counted separately for normal and error output (0 = off) |
+| `max_output_lines` | 1000 | printed lines per cell before output is muted, counted separately for normal and error output; a line with no newline counts once per 1,000 characters (0 = off) |
 | `max_displays` | 200 | `display()` calls per cell before they are muted (0 = off) |
 | `muted_tail` | 20 | last muted lines shown when the cell ends (0 = none) |
 | `replay_rows` | 6 | rows in the replay table |
-| `max_watched` | 25 | variables watched per loop |
+| `max_watched` | 25 | variables watched per loop; the condition's and the ones the loop changes come first |
 | `heatmap` | `auto` | `on`, `off` or `auto` |
 | `time_yellow` / `time_red` | 1.0 / 10.0 | seconds for a yellow / red health bar |
 | `mem_yellow` / `mem_red` | 0.50 / 0.80 | memory fraction for a yellow / red health bar |
@@ -346,7 +350,9 @@ pytest
 ```
 
 The tests also run on GitHub for every push and pull request, on Python 3.9 to
-3.13 (Linux) and on Windows and macOS: see `.github/workflows/tests.yml`.
+3.13 (Linux) and on Windows and macOS, with the oldest supported IPython, and
+against the built wheel instead of the source folder; `mypy` checks the type
+hints. See `.github/workflows/tests.yml`.
 
 `tests/test_false_positives.py` runs correct loops that look suspicious (a binary
 search, Collatz, a queue that grows before it empties) with the rules made
@@ -372,11 +378,12 @@ python benchmarks/overhead.py
 ```
 ## Extras (optional)
 
-The modules in `loop_autopsy/extras/` are optional add-ons, not part of the core:
+The modules in `loop_autopsy/extras/` are optional helpers you import and call
+yourself; the reports loop-autopsy shows on its own do not use them:
 
 - [`growth_trace`](docs/growth-trace.md): locate notebook lines with growing live allocations after a loop
-- `report_theme`: light/dark themes for the HTML report
-- `report_i18n`: multi-language report labels (en, id, zh)
+- `report_theme`: light/dark colours for an HTML report you build
+- `report_i18n`: report labels in English, Indonesian and Chinese
 - `report_export`: export reports to text or HTML files
 - `sparkline`: mini chart of a variable's path against its stop value
 

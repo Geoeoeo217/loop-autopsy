@@ -59,11 +59,47 @@ class Size:
         return f"{self.kind}(len={self.length})" if self.length >= 0 else f"<{self.kind}>"
 
 
+LONG = 1000  # longer str/bytes (and ints over 4,000 bits) are not kept in the history
+
+
+class Long:
+    """Marker stored instead of a long string, bytes or a huge int, so the replay
+    history never keeps a big value alive after the student deletes it."""
+
+    __slots__ = ("text", "key")
+
+    def __init__(self, value: Any):
+        if isinstance(value, int):
+            digits = int(value.bit_length() * 0.30103) + 1
+            self.text = f"<int with about {digits:,} digits>"
+            self.key: tuple = (int, value.bit_length(), hash(value))
+        else:
+            self.text = f"{value[:30]!r}... (len {len(value):,})"
+            self.key = (type(value), len(value), hash(value))
+
+    def __eq__(self, other):
+        return isinstance(other, Long) and self.key == other.key
+
+    def __hash__(self):
+        return hash(self.key)
+
+    def __repr__(self):
+        return self.text
+
+
+def _is_long(value: Any) -> bool:
+    t = type(value)
+    if t is str or t is bytes:
+        return len(value) > LONG
+    return t is int and value.bit_length() > 4 * LONG
+
+
 def replay_value(value: Any) -> Any:
     """Cheap snapshot of one value for the replay table."""
     if isinstance(value, _IMMUTABLE):
-        return value
-    if isinstance(value, tuple) and len(value) <= 10 and all(isinstance(x, _IMMUTABLE) for x in value):
+        return Long(value) if _is_long(value) else value
+    if (isinstance(value, tuple) and len(value) <= 10
+            and all(isinstance(x, _IMMUTABLE) and not _is_long(x) for x in value)):
         return value
     try:
         if isinstance(value, (list, dict, set, tuple)) and len(value) <= 8:

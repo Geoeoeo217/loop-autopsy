@@ -4,12 +4,18 @@
 Every ``while``/``for`` loop gets two inserted calls::
 
     __loop_autopsy__.begin(ID)                 # before the loop
-    while cond:
-        if __loop_autopsy__.due(ID):           # first line of the body
-            __loop_autopsy__.check(ID, locals(), globals())
-        ...
+    try:
+        while cond:
+            if __loop_autopsy__.due(ID):       # first line of the body
+                __loop_autopsy__.check(ID, locals(), globals())
+            ...
+    finally:                                   # the run is over: back to the outer run, if any
+        if ID in __loop_autopsy__.stacks: ...
 
-``due`` is a cheap counter; ``check`` runs the detectors (monitor.py).
+``due`` is a cheap counter; ``check`` runs the detectors (monitor.py). The
+``finally`` block makes a loop that runs inside itself (a loop in a recursive
+function) keep one record per run. It uses no function calls, so it still
+works while Python is unwinding a ``RecursionError``.
 """
 
 from __future__ import annotations
@@ -157,6 +163,25 @@ def has_exit(body: Iterable[ast.AST]) -> bool:
     return False
 
 
+def changed_names(nodes: Iterable[ast.AST]) -> Set[str]:
+    """Names the loop body can change: assigned (``x = ...``, ``x += 1``, ``for x in``),
+    deleted, or changed in place (``x[i] = ...``, ``x.attr = ...``, ``x.append(...)``)."""
+    found: Set[str] = set()
+    for node in _walk_loop(nodes):
+        if isinstance(node, ast.Name) and isinstance(node.ctx, (ast.Store, ast.Del)):
+            found.add(node.id)
+        elif isinstance(node, (ast.Subscript, ast.Attribute)) and isinstance(node.ctx, (ast.Store, ast.Del)):
+            base = node.value
+            while isinstance(base, (ast.Subscript, ast.Attribute)):
+                base = base.value
+            if isinstance(base, ast.Name):
+                found.add(base.id)
+        elif (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+              and isinstance(node.func.value, ast.Name)):
+            found.add(node.func.value.id)  # nums.append(x) changes nums
+    return found
+
+
 def _side(node: ast.AST):
     if isinstance(node, ast.Name):
         return ("name", node.id)
@@ -192,6 +217,16 @@ def _unparse(node: ast.AST) -> str:
 
 
 # --------------------------------------------------------------------------- transformer
+# Runs when a loop run ends, however it ends: drop this run's record from the loop's
+# stack, and make the run it interrupted (a loop in a recursive function) current again.
+# Only subscripts, no calls: it must not fail while a RecursionError unwinds the stack.
+_END = """
+if {id} in {rt}.stacks:
+    del {rt}.stacks[{id}][-1:]
+    {rt}.states[{id}] = ({rt}.stacks[{id}][-1:] or [{rt}.states[{id}]])[0]
+"""
+
+
 class LoopTransformer(ast.NodeTransformer):
     """IPython AST transformer. ``register`` stores each LoopInfo and returns its id."""
 
@@ -216,7 +251,7 @@ class LoopTransformer(ast.NodeTransformer):
         if contains_yield([node.test, *node.body]):
             return node
         cond = names_in([node.test])
-        watched = self._watched(cond, node.body)
+        watched, unwatched = self._watched(cond, node.body)
         safe, waits = classify_calls([node.test, *node.body], set(watched))
         facts = self._facts.get(id(node), loop_notes.LoopFacts())
         info = LoopInfo(
@@ -227,7 +262,7 @@ class LoopTransformer(ast.NodeTransformer):
             repeat_safe=safe, waits_for_user=waits,
             always_true=always_true(node.test), exits=has_exit(node.body),
             notes=tuple(facts.notes), outside_update=facts.outside_update,
-            branch_updates=tuple(facts.branch_updates),
+            branch_updates=tuple(facts.branch_updates), unwatched_changes=unwatched,
         )
         return self._instrument(node, info)
 
@@ -236,7 +271,7 @@ class LoopTransformer(ast.NodeTransformer):
         if contains_yield([node.iter, *node.body]):
             return node
         cond = names_in([node.iter])
-        watched = self._watched(cond, node.body)
+        watched, _ = self._watched(cond, node.body)
         _, waits = classify_calls([node.iter, *node.body], set(watched))
         info = LoopInfo(
             loop_id=-1, kind="for", lineno=node.lineno,
@@ -253,12 +288,22 @@ class LoopTransformer(ast.NodeTransformer):
     visit_AsyncFor = ast.NodeTransformer.generic_visit  # never instrument async loops
 
     # -- helpers
-    def _watched(self, cond: List[str], body: List[ast.stmt]) -> List[str]:
+    def _watched(self, cond: List[str], body: List[ast.stmt]) -> Tuple[List[str], bool]:
+        """The names to watch, in reading order, and whether a name the body changes
+        had to be left out. Over ``max_watched``, the condition's names and the names
+        the body changes are kept first: a name that is only read cannot change."""
         names = list(cond)
         for name in names_in(body):
             if name not in names:
                 names.append(name)
-        return names[: max(1, self.max_watched())]
+        limit = max(1, self.max_watched())
+        if len(names) <= limit:
+            return names, False
+        changed = changed_names(body)
+        first = [n for n in names if n in cond or n in changed]
+        rest = [n for n in names if n not in first]
+        keep = set((first + rest)[:limit])
+        return [n for n in names if n in keep], any(n in changed and n not in keep for n in names)
 
     def _instrument(self, node, info: LoopInfo):
         loop_id = self.register(info)
@@ -273,12 +318,15 @@ class LoopTransformer(ast.NodeTransformer):
             ))],
             orelse=[],
         )
-        for new in (begin, check):
+        end = ast.parse(_END.format(id=loop_id, rt=RUNTIME_NAME)).body
+        for new in (begin, check, *end):
             ast.copy_location(new, node)
             for child in ast.walk(new):
                 ast.copy_location(child, node)
         node.body.insert(0, check)
-        return [begin, node]
+        wrapped = ast.Try(body=[node], handlers=[], orelse=[], finalbody=end)
+        ast.copy_location(wrapped, node)
+        return [begin, wrapped]
 
     def _measure_iterable(self, node: ast.For, loop_id: int) -> None:
         """``for x in data:`` becomes ``for x in __loop_autopsy__.sized(ID, data):``.

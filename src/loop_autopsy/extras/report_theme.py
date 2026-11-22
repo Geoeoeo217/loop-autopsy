@@ -61,9 +61,10 @@ def get_theme(name: str = "light") -> ReportTheme:
 
 
 def theme_from_settings(settings: object | None) -> ReportTheme:
-    """Read ``report_theme`` from a settings-like object.
+    """Read a ``report_theme`` attribute from any object (your own settings).
 
-    A missing setting keeps the existing light appearance.
+    loop-autopsy's own ``Settings`` has no such setting, so passing it always
+    gives the light theme. A missing attribute keeps the light appearance.
     """
     name = getattr(settings, "report_theme", "light")
     return get_theme(str(name))

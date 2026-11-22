@@ -55,8 +55,8 @@ If `git push` is rejected, someone pushed before you: run `git pull`, then
 
 ## Releasing a new version
 
-1. Raise `version` in `pyproject.toml` and `__version__` in
-   `src/loop_autopsy/__init__.py` (they must match).
+1. Raise `__version__` in `src/loop_autopsy/__init__.py`. It is the only
+   place the version is written; `pyproject.toml` reads it from there.
 2. In `CHANGELOG.md`, rename **Unreleased** to the new version and date.
 3. `python -m build` creates the files to upload in `dist/`.
 4. `twine upload dist/*` uploads them to PyPI; it asks for an API token.

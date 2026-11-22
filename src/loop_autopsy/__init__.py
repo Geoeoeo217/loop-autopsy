@@ -37,6 +37,7 @@ def load_ipython_extension(ip) -> None:
     ip.events.register("pre_run_cell", monitor.pre_run_cell)
     health.register()
     monitor.install_exception_handler()
+    monitor.time_waits()
     ip.register_magics(AutopsyMagics(ip, monitor, health))
     _LOADED[id(ip)] = (monitor, transformer, health)
     print(f"loop-autopsy {__version__} is watching your loops. Type %autopsy help for options.")
@@ -56,3 +57,4 @@ def unload_ipython_extension(ip) -> None:
         pass
     health.unregister()
     monitor.remove_exception_handler()
+    monitor.untime_waits()

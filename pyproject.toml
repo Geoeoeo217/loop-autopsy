@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "loop-autopsy"
-version = "0.4.0"
+dynamic = ["version"]  # read from __version__ in src/loop_autopsy/__init__.py
 description = "Stops runaway loops in Jupyter and shows the evidence for why they never ended."
 readme = "README.md"
 requires-python = ">=3.9"
@@ -34,18 +34,33 @@ classifiers = [
     "Topic :: Education",
     "Topic :: Software Development :: Debuggers",
 ]
-dependencies = ["ipython>=7.0"]
+dependencies = ["ipython>=8.15"]  # tested in CI ("oldest" job); older ones fail tests
 
 [project.optional-dependencies]
-test = ["pytest", "pytest-cov", "nbclient", "ipykernel"]
+memory = ["psutil>=5.6"]  # exact memory readings on macOS and in containers; optional
+test = ["pytest>=7", "pytest-cov>=4", "nbclient>=0.5", "ipykernel>=6"]
+typecheck = ["mypy>=1.5"]
 
 [project.urls]
 Homepage = "https://github.com/Geoeoeo217/loop-autopsy"
 Repository = "https://github.com/Geoeoeo217/loop-autopsy"
 Documentation = "https://github.com/Geoeoeo217/loop-autopsy#readme"
 
+[tool.setuptools.dynamic]
+version = { attr = "loop_autopsy.__version__" }
+
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+loop_autopsy = ["py.typed"]
+
+[tool.mypy]
+python_version = "3.10"  # the oldest mypy accepts; the code itself still runs on 3.9
+platform = "linux"  # the same answer on every computer (os.sysconf, ctypes.WinDLL)
+files = ["src/loop_autopsy"]
+ignore_missing_imports = true
+check_untyped_defs = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

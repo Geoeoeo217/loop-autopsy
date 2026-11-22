@@ -348,7 +348,9 @@ def branch_hint(updates: Iterable[BranchUpdate], values: Dict[str, Any]) -> Opti
         reasons = [_skipped_by(u, values) for u in group]
         if not all(reasons):
             continue
-        update, (branch, result) = group[0], reasons[0]
+        reason = reasons[0]
+        assert reason is not None  # all(reasons) above
+        update, (branch, result) = group[0], reason
         test = _src(ast.parse(branch.test, mode="eval").body, 50)
         shown = [f"`{n} = {_short(values[n])}`" for n in sorted(_loaded(ast.parse(branch.test, mode="eval")))
                  if n in values]
@@ -374,7 +376,7 @@ def _short(value: Any, width: int = 30) -> str:
 
 
 # --------------------------------------------------------------------------- 2. endless iterators
-_ENDLESS_TYPES = {itertools.count: "itertools.count", itertools.cycle: "itertools.cycle"}
+_ENDLESS_TYPES: Dict[type, str] = {itertools.count: "itertools.count", itertools.cycle: "itertools.cycle"}
 
 
 def endless_iterable(obj: Any) -> Optional[str]:
@@ -432,7 +434,7 @@ def _first_loop(stmts: List[ast.stmt]) -> Optional[ast.AST]:
     return None
 
 
-def _note_catch_all(stmt: ast.AST, loop: Optional[ast.AST], found: Dict[int, LoopFacts]) -> None:
+def _note_catch_all(stmt: Any, loop: Optional[ast.AST], found: Dict[int, LoopFacts]) -> None:
     """Attach one note per catch-all ``except`` to the loop it affects.
 
     Inside a loop's body, the ``except`` catches ■, so pressing ■ only skips
