@@ -5,6 +5,10 @@ Version numbers follow [Semantic Versioning](https://semver.org/).
 
 ## Unreleased
 
+Nothing yet.
+
+## 0.4.0 (2026-11-22)
+
 ### Added
 
 - Update line after the loop: when the line right after a `while` loop
@@ -26,12 +30,29 @@ Version numbers follow [Semantic Versioning](https://semver.org/).
   `len(name)`, such as `while i < len(nums):`, as long as the length stays
   the same. A length that changes is left alone, since a queue can grow for
   a long time before it empties.
+- Optional memory tools, each loaded on its own:
+  `%%growthcheck` previews a `for` loop that changes the list it loops over
+  (`loop_autopsy.growth_check`), `%growthdiff mark` / `show` compares
+  variable sizes before and after a cell (`loop_autopsy.growth_diff`), and
+  `%memaliases` / `%memparts` find names sharing one object and show what a
+  container holds (`loop_autopsy.memory_inspect`).
+- `loop_autopsy.extras.growth_trace` finds the notebook lines whose live
+  allocations keep growing after a loop.
+
+### Changed
+
+- The optional report helpers moved into `loop_autopsy.extras`: import
+  `loop_autopsy.extras.report_theme`, `report_i18n`, `report_export` and
+  `sparkline` instead of `loop_autopsy.<name>`. The core package does not
+  use them.
 
 ### Development
 
 - `tests/test_false_positives.py`: 27 correct but suspicious-looking loops
   that must never be stopped, run with stricter thresholds than the
   defaults, plus broken versions that must still be stopped.
+- The license is declared as the SPDX expression `license = "MIT"`
+  (setuptools 77 or newer), which removes the deprecation warnings on build.
 
 ## 0.3.0 (2026-11-20)
 
