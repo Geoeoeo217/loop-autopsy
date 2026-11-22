@@ -481,10 +481,10 @@ def _recent_speed(s: dict, now: float, done: int) -> Optional[float]:
 def check_estimate(info: LoopInfo, state: LoopState, settings: Settings, now: float) -> Optional[Finding]:
     """R8: a for loop that, at its current speed, needs far longer than the time limit.
 
-    It would be stopped by the time limit anyway, so it is stopped as soon as
-    that is clear, with an estimate instead of a minute of waiting. Loops that
-    can end early (a ``break``, ``return`` or ``raise``) are left to the time
-    limit: a search loop may well finish long before its last item.
+    The estimate is a guess (a loop may speed up: a cache warms, slow items
+    come first), so it is shown as a note and the loop keeps running; only the
+    time limit stops it. Loops that can end early (a ``break``, ``return`` or
+    ``raise``) get no estimate: a search may finish long before its last item.
     """
     if (info.kind not in ("for", "comprehension") or info.exits or info.waits_for_user
             or settings.time_limit <= 0 or settings.estimate_after <= 0):
@@ -510,8 +510,8 @@ def check_estimate(info: LoopInfo, state: LoopState, settings: Settings, now: fl
         "too_slow", "loop would take too long",
         f"After {elapsed:.0f} s this loop has finished {done:,} of its {total:,} rounds ({share}). "
         f"At this speed it needs about {duration(needed)} in total, far more than the "
-        f"{settings.time_limit:.0f} s time limit, so it was stopped now instead of after "
-        f"{settings.time_limit:.0f} s. Nothing is wrong with the loop itself: it is just slow.",
+        f"{settings.time_limit:.0f} s time limit. It keeps running in case it speeds up, and is "
+        f"stopped at the time limit if it does not. Nothing is wrong with the loop itself: it is just slow.",
         "Try it on a small part of the data first (for example the first 1,000 items) and check the result, "
         "or make each round do less work. To let it run to the end: "
         f"`%autopsy config time_limit={allow}`, or start the cell with `%%autopsy off`.",

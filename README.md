@@ -108,12 +108,12 @@ same. In `0 <= i < n`, moving away from one end is moving towards the other, so
 no direction is reported. An attribute is read without running any code: a
 property is never read, and the loop then gets the time limit.
 
-A `for` loop that "would take too long" is stopped with an estimate ("finished
-1,234 of 10,000,000 rounds; at this speed it needs about 11 hours") instead of a
-minute of waiting, because the time limit would stop it anyway. This only
-happens when the loop has no `break`, `return` or `raise`: a search that may end
-early is given the full time limit. A loop stopped by the time limit also shows
-how far it got, when its length is known.
+A `for` loop that "would take too long" gets a note with an estimate ("finished
+1,234 of 10,000,000 rounds; at this speed it needs about 11 hours"), so you know
+early. It keeps running, because an estimate is a guess and a loop can speed up;
+the time limit stops it if it does not. Loops with a `break`, `return` or `raise`
+get no estimate: a search may end early. A loop stopped by the time limit also
+shows how far it got, when its length is known.
 
 "Wrong direction" and "jumped over" also work when the condition compares with
 the length of a list, string, tuple, dict or set, as in `while i < len(nums):`.
@@ -312,7 +312,7 @@ Change any of these with `%autopsy config key=value` (for example `%autopsy conf
 | Setting | Default | Meaning |
 |---|---|---|
 | `time_limit` | 60 | seconds before a loop that cannot be proven stuck is stopped (0 = never) |
-| `estimate_after` | 5 | seconds before a `for` loop's total time is estimated, to stop it early if it needs at least twice `time_limit` (0 = never) |
+| `estimate_after` | 5 | seconds before a `for` loop's total time is estimated, with a note if it needs at least twice `time_limit` (0 = never) |
 | `direction_after` | 500 | checks in a row moving away from the stop value before "wrong direction" |
 | `jump_after` | 100 | checks in a row after jumping over a `!=` stop value |
 | `growth_after` | 2000 | rounds before a growing list in a `for` loop is reported |

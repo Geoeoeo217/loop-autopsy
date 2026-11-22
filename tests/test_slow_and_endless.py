@@ -177,8 +177,9 @@ def test_slow_loop_in_a_shell(shell, capsys):
     capsys.readouterr()
     shell.run_cell("import time\nfor i in range(1000):\n    time.sleep(0.01)\n")
     out = capsys.readouterr().out
-    assert "loop would take too long" in out and "of its 1,000 rounds" in out
-    assert shell.user_ns["i"] < 100  # stopped long before the 2 s time limit
+    assert "Note: loop would take too long" in out and "of its 1,000 rounds" in out
+    assert "loop ran too long" in out  # the estimate is only a note: the time limit stops it
+    assert shell.user_ns["i"] > 100  # it kept running past the estimate, until the 2 s limit
 
 
 def test_slow_loop_with_a_break_gets_the_time_limit(shell, capsys):

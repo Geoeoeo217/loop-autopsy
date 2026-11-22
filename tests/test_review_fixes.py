@@ -103,3 +103,17 @@ def test_replay_still_shows_the_size_of_built_in_containers():
     from loop_autopsy.report import Size, replay_value
     assert replay_value(list(range(20))) == Size("list", 20)
     assert repr(replay_value(object())) == "<object>"
+
+
+def test_a_loop_that_speeds_up_is_not_stopped_by_the_estimate(shell, capsys):
+    """The estimate used to stop a loop early. A loop whose first rounds are slow and
+    the rest instant was stopped as "would take too long" although it finished in time."""
+    run(shell, "%autopsy config time_limit=2 estimate_after=0.2")
+    try:
+        capsys.readouterr()
+        result = run(shell, "import time\nfor i in range(100_000):\n    if i < 40:\n        time.sleep(0.01)\n")
+        out = capsys.readouterr().out
+        assert result.error_in_exec is None and shell.user_ns["i"] == 99_999
+        assert "Note: loop would take too long" in out  # still told early, as a note
+    finally:
+        run(shell, "%autopsy reset")

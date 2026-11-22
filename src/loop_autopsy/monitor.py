@@ -511,8 +511,8 @@ class Monitor:
         # between its items is mostly the loop's own work.
         if finding is None and not (info.lazy and self.loops_running > 0):
             loop_now = now - (self.waited - state.scratch.get("waited0", self.waited))
-            finding = (_safely(state, "estimate", detectors.check_estimate, info, state, settings, loop_now)
-                       or _safely(state, "time", detectors.check_time, info, state, settings, loop_now))
+            self._note_estimate(info, state, settings, loop_now)
+            finding = _safely(state, "time", detectors.check_time, info, state, settings, loop_now)
         if finding is not None:
             state.stopped = finding
             self.stats["stopped"] += 1
@@ -571,8 +571,8 @@ class Monitor:
             finding = _safely(state, "memory", growth.check_memory, info, state, values, settings)
         if finding is None:
             loop_now = now - (self.waited - state.scratch.get("waited0", self.waited))  # minus input() time
-            finding = (_safely(state, "estimate", detectors.check_estimate, info, state, settings, loop_now)
-                       or _safely(state, "time", detectors.check_time, info, state, settings, loop_now))
+            self._note_estimate(info, state, settings, loop_now)
+            finding = _safely(state, "time", detectors.check_time, info, state, settings, loop_now)
         state.next_check = state.rounds + state.stride
         if finding is not None:
             state.stopped = finding
@@ -581,6 +581,18 @@ class Monitor:
             stopped = LoopStopped(finding)
             stopped.report = self.last  # type: ignore[attr-defined]  # for a loop stopped in a thread
             raise stopped
+
+    def _note_estimate(self, info: LoopInfo, state: LoopState, settings: Settings, loop_now: float) -> None:
+        """Once per loop run: a note when, at its current speed, the loop needs far longer
+        than the time limit. Only a note: the estimate is a guess, and a loop that speeds
+        up must be allowed to finish. The time limit still stops it if it does not."""
+        if state.scratch.get("est_noted"):
+            return
+        finding = _safely(state, "estimate", detectors.check_estimate, info, state, settings, loop_now)
+        if finding is not None:
+            state.scratch["est_noted"] = True
+            _print_note(f"[loop-autopsy] Note: {finding.title} (line {info.lineno}). {finding.explanation} "
+                        f"{finding.hint}")
 
     def _values(self, loop_id: int, info: LoopInfo, state: LoopState, namespace: Dict[str, Any],
                 global_ns: Optional[Dict[str, Any]]) -> Dict[str, Any]:
