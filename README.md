@@ -4,8 +4,6 @@
 
 **Stops runaway loops in Jupyter and shows the evidence for why they never ended.**
 
-**Demo page with a 41-second video:** https://geoeoeo217.github.io/loop-autopsy-demo/
-
 ```python
 %load_ext loop_autopsy
 
