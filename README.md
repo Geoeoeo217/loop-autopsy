@@ -37,7 +37,7 @@ eventually becomes False (for example `count += 1`).
 ## Demo video
 
 A narrated tour of every feature in version 0.4.0. Click the image to
-watch it.
+download it (click "View raw").
 
 [![loop-autopsy demo video](https://raw.githubusercontent.com/Geoeoeo217/loop-autopsy/main/docs/demo-poster.png)](https://github.com/Geoeoeo217/loop-autopsy/blob/main/docs/loop-autopsy-demo.mp4)
 
