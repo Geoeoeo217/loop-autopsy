@@ -9,6 +9,8 @@ them separately, so each one stays under its own license.
 |---|---|---|
 | [IPython](https://ipython.org) | **Required.** Runs the loop watcher (`dependencies` in `pyproject.toml`). | BSD-3-Clause |
 | [psutil](https://github.com/giampaolo/psutil) | **Optional** (`[memory]` extra in `pyproject.toml`). `growth.py` uses it, only if installed, to read total RAM and the memory used by the kernel. Without it the code reads `/proc` on Linux and Windows' own memory functions; on macOS the memory features are then off. | BSD-3-Clause |
+| [elevenlabs](https://github.com/elevenlabs/elevenlabs-python) | **Optional** (`[voice]` extra in `pyproject.toml`). `extras/voice.py` creates an ElevenLabs API client with it, only when `get_client()` is called. | MIT |
+| [python-dotenv](https://github.com/theskumar/python-dotenv) | **Optional** (`[voice]` extra in `pyproject.toml`). `extras/voice.py` uses it to load `ELEVENLABS_API_KEY` from a `.env` file. | BSD-3-Clause |
 | [pytest](https://pytest.org) | **Development only.** Runs the tests (`[test]` extra in `pyproject.toml`). | MIT |
 | [pytest-cov](https://github.com/pytest-dev/pytest-cov) | **Development only.** Reports which lines the tests cover, in CI (`[test]` extra in `pyproject.toml`). | MIT |
 | [nbclient](https://github.com/jupyter/nbclient) | **Development only.** Runs notebook cells for `tests/test_real_kernel.py` and `examples/refresh_demo.py` (`[test]` extra in `pyproject.toml`). | BSD-3-Clause |

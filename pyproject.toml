@@ -38,6 +38,7 @@ dependencies = ["ipython>=8.15"]  # tested in CI ("oldest" job); older ones fail
 
 [project.optional-dependencies]
 memory = ["psutil>=5.6"]  # exact memory readings on macOS and in containers; optional
+voice = ["elevenlabs>=2", "python-dotenv>=1"]  # extras/voice.py: ElevenLabs client; key from ELEVENLABS_API_KEY / .env
 test = ["pytest>=7", "pytest-cov>=4", "nbclient>=0.5", "ipykernel>=6", "numpy", "cloudpickle", "psutil"]  # numpy, cloudpickle: tests only; psutil: also tests [memory]
 typecheck = ["mypy>=1.5"]
 

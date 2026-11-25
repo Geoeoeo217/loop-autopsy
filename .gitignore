@@ -8,3 +8,5 @@ dist/
 .venv/
 .DS_Store
 .coverage
+# Local secrets written by `elevenlabs onboard`
+/.env
