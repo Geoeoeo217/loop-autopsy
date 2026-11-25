@@ -41,6 +41,8 @@ download it (click "View raw").
 
 [![loop-autopsy demo video](https://raw.githubusercontent.com/Geoeoeo217/loop-autopsy/main/docs/demo-poster.png)](https://github.com/Geoeoeo217/loop-autopsy/blob/main/docs/loop-autopsy-demo.mp4)
 
+Alternatively, watch the video directly on the website: https://geoeoeo217.github.io/loop-autopsy-demo/
+
 ---
 
 ## Motivation
